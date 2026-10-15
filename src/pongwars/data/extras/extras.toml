@@ -79,3 +79,46 @@ weight = 0
 category = "status"
 duration = 2.0
 weight = 0
+
+[aim_assist]
+category = "power"
+duration = 10.0
+weight = 3
+
+[cleanse]
+category = "power"
+weight = 2
+
+[slow_ball]
+category = "power"
+weight = 2
+
+[cat]
+category = "weapon"
+duration = 5.0
+ammo = 2
+weight = 3
+
+[hex]
+category = "weapon"
+ammo = 1
+weight = 2
+
+[warp]
+category = "weapon"
+ammo = 2
+weight = 2
+
+[turbo_ball]
+category = "penalty"
+weight = 2
+
+[drunk]
+category = "penalty"
+duration = 7.0
+weight = 3
+
+[jammed]
+category = "penalty"
+duration = 8.0
+weight = 2

@@ -22,6 +22,7 @@ PINK: Color = (255, 119, 168)
 PEACH: Color = (255, 204, 170)
 
 PLAYER_COLORS: tuple[Color, ...] = (BLUE, RED, LIME, YELLOW)
+PADDLE_PALETTE: tuple[Color, ...] = (BLUE, RED, LIME, YELLOW, ORANGE, PINK, WHITE, LAVENDER)
 THEMES: dict[str, tuple[Color, Color, Color]] = {
     "stone": (NAVY, DARK_GREY, LIGHT_GREY),
     "default": (NAVY, DARK_GREY, LIGHT_GREY),

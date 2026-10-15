@@ -68,12 +68,24 @@ Keys can be rebound in **Settings** (two keys per seat). A key already in use is
 - Obstacles: *bumpers* bounce the ball with extra force, *solid* walls just reflect it and
   *destructible* blocks break after being hit.
 - **Extras** appear on the field when enabled:
-  - **Powers** (big paddle, speed, magnet, shield, multiball, slow motion) help you.
-  - **Weapons** (laser, freeze, bomb) have limited ammo; fire with your fire key.
-  - **Penalties** (small paddle, inverted controls, slowness, blindness) hurt you.
+  - **Powers** (big paddle, speed, magnet, shield, multiball, slow motion, aim assist,
+    cleanse, slow ball, turbo ball) help you.
+  - **Weapons** (laser, freeze, bomb, **cat**, hex, warp) have limited ammo; fire with your
+    fire key. The cat chases the ball for a few seconds and randomly changes its direction
+    and speed.
+  - **Penalties** (small paddle, inverted controls, slowness, blindness, drunk, jammed) hurt
+    you.
   - Active effects are shown in the HUD.
 - **Esc** pauses: resume, open settings or quit to the menu.
 - At the end the results screen offers rematch, change setup or main menu.
+
+## Appearance and music
+
+**Appearance** in the main menu lets each seat pick a paddle colour (8) and style (4), the
+animated arena background (none, grid, stars, rain, waves, aurora) and the music track
+(random or one of arcade, chase, hero, dusk, boss). A live preview is shown.
+**How to play** is an in-game guide (6 pages: goal, controls, modes, powers, weapons,
+penalties); use Left/Right to turn pages.
 
 ## Settings
 

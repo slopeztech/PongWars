@@ -7,8 +7,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
 from pongwars.domain import constants as c
-from pongwars.domain.entities import Ball, Rect
-from pongwars.domain.events import BombDetonated, Event, LaserFired
+from pongwars.domain.entities import Ball, Cat, Rect
+from pongwars.domain.events import BallWarped, BombDetonated, CatReleased, Event, LaserFired
 from pongwars.domain.extras.base import EFFECTS, Effect, Mods
 from pongwars.domain.vec import Vec2
 
@@ -264,3 +264,155 @@ class Bomb(Effect):
             ball.vel = heading * speed
             ball.held_by = None
         events.append(BombDetonated(player))
+
+
+def _scale_balls(world: "World", factor: float) -> None:
+    for ball in world.balls:
+        if ball.held_by is not None:
+            continue
+        speed = ball.vel.length()
+        if speed > 0.0:
+            ball.vel = ball.vel * (
+                min(max(speed * factor, c.BALL_MIN_SPEED), c.BALL_MAX_SPEED) / speed
+            )
+
+
+@_register("aim_assist", "power")
+class AimAssist(Effect):
+    """@brief The owner's paddle bounces the ball towards the next opponent."""
+
+    def modify(self, mods: Mods) -> None:
+        """@brief Enable aiming."""
+        mods.aim = True
+
+
+@_register("cleanse", "power")
+class Cleanse(Effect):
+    """@brief Removes every penalty and status effect from the owner."""
+
+    lasting = False
+
+    def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Purge the owner's penalties.
+        @param world Match being played.
+        @param player Collector.
+        @param events Event list to append to.
+        """
+        world.extras.clear_penalties(player, events)
+
+
+@_register("slow_ball", "power")
+class SlowBall(Effect):
+    """@brief Slows every ball down."""
+
+    lasting = False
+
+    def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Reduce the ball speed.
+        @param world Match being played.
+        @param player Unused.
+        @param events Unused.
+        """
+        _scale_balls(world, c.SLOW_BALL_FACTOR)
+
+
+@_register("turbo_ball", "penalty")
+class TurboBall(Effect):
+    """@brief Speeds every ball up."""
+
+    lasting = False
+    single_target = True
+
+    def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Increase the ball speed.
+        @param world Match being played.
+        @param player Unused.
+        @param events Unused.
+        """
+        _scale_balls(world, c.TURBO_BALL_FACTOR)
+
+
+@_register("drunk", "penalty")
+class Drunk(Effect):
+    """@brief The paddle sways on its own."""
+
+    def modify(self, mods: Mods) -> None:
+        """@brief Make the paddle wobble."""
+        mods.drunk = True
+
+
+@_register("jammed", "penalty")
+class Jammed(Effect):
+    """@brief Weapons cannot be fired."""
+
+    def modify(self, mods: Mods) -> None:
+        """@brief Block weapons."""
+        mods.jammed = True
+
+
+@_register("cat", "weapon")
+class CatWeapon(Effect):
+    """@brief Releases a cat that chases the ball and scrambles its direction and speed."""
+
+    lasting = False
+
+    def fire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Drop the cat in front of the owner's paddle.
+        @param world Match being played.
+        @param player Owner seat.
+        @param events Event list to append to.
+        """
+        rect = world.paddles[player].rect
+        dx, dy = SHOT_DIRECTIONS[player]
+        pos = Vec2(
+            rect.cx + dx * (rect.half_w + c.CAT_RADIUS), rect.cy + dy * (rect.half_h + c.CAT_RADIUS)
+        )
+        world.extras.cats.append(
+            Cat(pos, player, round(world.extras.specs["cat"].duration * c.TICK_RATE))
+        )
+        events.append(CatReleased(player))
+
+
+@_register("hex", "weapon")
+class Hex(Effect):
+    """@brief Curses the next opponent with a random lasting penalty."""
+
+    lasting = False
+
+    def fire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Cast the curse.
+        @param world Match being played.
+        @param player Caster seat.
+        @param events Event list to append to.
+        """
+        targets = opponents(world, player)
+        curses = sorted(
+            name
+            for name, spec in world.extras.specs.items()
+            if spec.category == "penalty" and EFFECTS.get(name).lasting
+        )
+        if targets and curses:
+            world.extras.apply_direct(
+                curses[world.rng.randint(0, len(curses) - 1)], targets[0], events
+            )
+
+
+@_register("warp", "weapon")
+class Warp(Effect):
+    """@brief Teleports every free ball to a random spot, keeping its velocity."""
+
+    lasting = False
+
+    def fire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Warp the balls.
+        @param world Match being played.
+        @param player Unused.
+        @param events Event list to append to.
+        """
+        for ball in world.balls:
+            if ball.held_by is not None:
+                continue
+            x = world.rng.uniform(c.WARP_MARGIN, c.FIELD_WIDTH - c.WARP_MARGIN)
+            y = world.rng.uniform(c.WARP_MARGIN, c.FIELD_HEIGHT - c.WARP_MARGIN)
+            ball.pos = Vec2(x, y)
+            events.append(BallWarped(x, y))

@@ -10,6 +10,7 @@ import pygame
 from pongwars.ai import AIController, Observation
 from pongwars.core.i18n import available_languages, load_catalog
 from pongwars.core.loop import FixedStepLoop
+from pongwars.core.settings import BACKGROUNDS, PADDLE_COLOR_COUNT, PADDLE_SKIN_COUNT, SEATS
 from pongwars.domain import constants as c
 from pongwars.domain.arenas import ArenaSpec, arena_names, get_arena
 from pongwars.domain.config import AI_DIFFICULTIES, MAX_PLAYERS, ConfigError, MatchConfig
@@ -166,10 +167,21 @@ class MainMenuScreen(MenuScreen):
                 ),
                 MenuItem(lambda: t("menu.main.lan_host"), soon, enabled=False),
                 MenuItem(lambda: t("menu.main.lan_join"), soon, enabled=False),
+                MenuItem(lambda: t("menu.main.appearance"), on_activate=self.open_appearance),
+                MenuItem(lambda: t("menu.main.howto"), on_activate=self.open_howto),
                 MenuItem(lambda: t("menu.main.settings"), on_activate=self.open_settings),
                 MenuItem(lambda: t("menu.main.quit"), on_activate=ctx.stack.pop_all),
             ]
         )
+        ctx.audio.start_music()
+
+    def open_appearance(self) -> None:
+        """@brief Open the appearance screen."""
+        self.ctx.stack.push(AppearanceScreen(self.ctx))
+
+    def open_howto(self) -> None:
+        """@brief Open the how-to-play pages."""
+        self.ctx.stack.push(HowToPlayScreen(self.ctx))
 
     def open(self, preset: tuple[str, str]) -> None:
         """@brief Open the match setup with a controller preset.
@@ -394,13 +406,23 @@ class MatchScreen(Screen):
             shake=s.shake,
             scale=1,
             view="split" if self.view == "split" else "shared",
+            background=s.background,
+            paddle_colors=tuple(s.paddle_colors),
+            paddle_skins=tuple(s.paddle_skins),
         )
         self.renderer = Renderer(render_settings, config.seed, ctx.translator)
         self.humans = [config.controllers[i] == "human" for i in range(self.world.players)]
         self.controllers = [self._controller(i) for i in range(self.world.players)]
         self.loop = FixedStepLoop(self._step, c.DT)
         self.paused = False
-        ctx.audio.start_music()
+        ctx.audio.start_music(self._pick_track(config.seed))
+
+    def _pick_track(self, seed: int) -> str:
+        tracks = self.ctx.audio.bank.match_tracks
+        choice = self.ctx.settings.music_track
+        if choice in tracks:
+            return choice
+        return tracks[seed % len(tracks)] if tracks else "menu"
 
     def _controller(self, seat: int) -> PlayerInput:
         config, world = self.config, self.world
@@ -704,6 +726,142 @@ class SettingsScreen(MenuScreen):
         elif self.error:
             _centered(surface, self.ctx.t(self.error), HINT_Y - 10, pal.RED)
         _hint(self.ctx, surface)
+
+
+class AppearanceScreen(MenuScreen):
+    """@brief Paddle colours and styles, arena background and music track."""
+
+    title_key = "appearance.title"
+
+    def __init__(self, ctx: AppContext) -> None:
+        """@brief Build the rows.
+        @param ctx Application context.
+        """
+        super().__init__(ctx)
+        t, s = ctx.t, ctx.settings
+        items: list[MenuItem] = []
+        for seat in range(SEATS):
+            items.append(
+                MenuItem(
+                    lambda seat=seat: t("appearance.color", number=seat + 1),  # type: ignore[misc]
+                    lambda seat=seat: t(f"color.{s.paddle_colors[seat]}"),  # type: ignore[misc]
+                    on_adjust=lambda d, seat=seat: self._step_seat(  # type: ignore[misc]
+                        s.paddle_colors, seat, d, PADDLE_COLOR_COUNT
+                    ),
+                )
+            )
+        for seat in range(SEATS):
+            items.append(
+                MenuItem(
+                    lambda seat=seat: t("appearance.skin", number=seat + 1),  # type: ignore[misc]
+                    lambda seat=seat: t(f"skin.{s.paddle_skins[seat]}"),  # type: ignore[misc]
+                    on_adjust=lambda d, seat=seat: self._step_seat(  # type: ignore[misc]
+                        s.paddle_skins, seat, d, PADDLE_SKIN_COUNT
+                    ),
+                )
+            )
+        items.append(
+            MenuItem(
+                lambda: t("appearance.background"),
+                lambda: t(f"background.{s.background}"),
+                on_adjust=self._background,
+            )
+        )
+        items.append(
+            MenuItem(
+                lambda: t("appearance.track"),
+                lambda: t(f"track.{s.music_track}"),
+                on_adjust=self._track,
+            )
+        )
+        self.menu.set_items(items)
+
+    def _step_seat(self, values: list[int], seat: int, step: int, count: int) -> None:
+        values[seat] = (values[seat] + step) % count
+        self.ctx.settings.save()
+
+    def _background(self, step: int) -> None:
+        s = self.ctx.settings
+        s.background = cycle(BACKGROUNDS, s.background, step)
+        s.save()
+
+    def _track(self, step: int) -> None:
+        s = self.ctx.settings
+        choices = ["random", *self.ctx.audio.bank.match_tracks]
+        s.music_track = cycle(choices, s.music_track, step)
+        s.save()
+        if s.music_track != "random":
+            self.ctx.audio.start_music(s.music_track)
+        else:
+            self.ctx.audio.start_music()
+
+    def draw(self, surface: pygame.Surface) -> None:
+        """@brief Draw the rows and a live paddle preview.
+        @param surface Low-resolution target.
+        """
+        _title(self.ctx, surface, self.title_key)
+        self.menu.draw(surface, 24, 26, 220)
+        s = self.ctx.settings
+        for seat in range(SEATS):
+            colour = pal.PADDLE_PALETTE[s.paddle_colors[seat] % len(pal.PADDLE_PALETTE)]
+            x = 262 + seat * 12
+            pygame.draw.rect(surface, colour, (x, 40, 6, 36))
+            if s.paddle_skins[seat] == 1:
+                for y in range(42, 76, 6):
+                    pygame.draw.rect(surface, pal.WHITE, (x, y, 6, 2))
+            elif s.paddle_skins[seat] == 2:
+                pygame.draw.rect(surface, pal.WHITE, (x + 2, 40, 2, 36))
+            elif s.paddle_skins[seat] == 3:
+                pygame.draw.rect(surface, pal.WHITE, (x, 40, 6, 4))
+                pygame.draw.rect(surface, pal.WHITE, (x, 72, 6, 4))
+        _hint(self.ctx, surface)
+
+
+class HowToPlayScreen(Screen):
+    """@brief Paged explanation of the goal, controls, modes and extras."""
+
+    PAGES = 6
+    LINES = 6
+
+    def __init__(self, ctx: AppContext) -> None:
+        """@brief Create the screen on the first page.
+        @param ctx Application context.
+        """
+        super().__init__(ctx)
+        self.page = 1
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        """@brief Left/Right turn pages; Esc leaves.
+        @param event pygame event.
+        """
+        if event.type != pygame.KEYDOWN:
+            return
+        if event.key == pygame.K_ESCAPE:
+            self.ctx.stack.pop()
+        elif event.key in (pygame.K_RIGHT, pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.page = self.page % self.PAGES + 1
+            self.ctx.audio.play("menu")
+        elif event.key == pygame.K_LEFT:
+            self.page = (self.page - 2) % self.PAGES + 1
+            self.ctx.audio.play("menu")
+
+    def draw(self, surface: pygame.Surface) -> None:
+        """@brief Draw the current page.
+        @param surface Low-resolution target.
+        """
+        t = self.ctx.t
+        surface.fill(pal.NAVY)
+        _centered(surface, t("howto.title"), TITLE_Y - 6, pal.ORANGE, 2)
+        _centered(surface, t(f"howto.{self.page}.title"), 36, pal.YELLOW, 2)
+        for i in range(1, self.LINES + 1):
+            key = f"howto.{self.page}.line{i}"
+            text = t(key)
+            if text != key:
+                draw_text(surface, text, 24, 58 + (i - 1) * 12, pal.WHITE)
+        _centered(
+            surface, t("howto.page", page=self.page, total=self.PAGES), HINT_Y - 12, pal.LIGHT_GREY
+        )
+        _centered(surface, t("howto.nav"), HINT_Y, pal.LIGHT_GREY)
 
 
 def make_keymap(data: dict[str, list[int]]) -> KeyMap:

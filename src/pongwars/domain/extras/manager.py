@@ -2,12 +2,15 @@
 @brief Pickups, active effects and weapon slots of a match.
 """
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pongwars.domain import constants as c
 from pongwars.domain.config import ConfigError
+from pongwars.domain.entities import Ball, Cat
 from pongwars.domain.events import (
+    CatPounced,
     EffectApplied,
     EffectExpired,
     Event,
@@ -46,6 +49,7 @@ class ExtrasManager:
         self._world = world
         self.specs = load_specs()
         self.pickups: list[Pickup] = []
+        self.cats: list[Cat] = []
         self.active: list[list[Effect]] = [[] for _ in range(world.players)]
         self.weapons: list[tuple[str, int] | None] = [None] * world.players
         self.spawn_names = self._spawnable(world.config.extras)
@@ -104,8 +108,61 @@ class ExtrasManager:
         )
         if effect_class.on_opponents or penalty_to_others:
             targets = opponents(self._world, player)
+        if effect_class.single_target:
+            targets = targets[:1]
         for target in targets:
             self._apply_one(effect_class(spec), spec, target, events)
+
+    def apply_direct(self, name: str, player: int, events: list[Event]) -> None:
+        """@brief Apply an effect to exactly `player`, ignoring the penalty-target setting.
+        @param name Registered effect name.
+        @param player Seat that receives the effect.
+        @param events Event list to append to.
+        """
+        self._apply_one(EFFECTS.get(name)(self.specs[name]), self.specs[name], player, events)
+
+    def clear_penalties(self, player: int, events: list[Event]) -> None:
+        """@brief Remove every penalty and status effect of a player.
+        @param player Seat to cleanse.
+        @param events Event list to append to.
+        """
+        for effect in list(self.active[player]):
+            if effect.category in ("penalty", "status"):
+                self._expire(player, effect, events)
+        self._mods[player] = self._mods_of(player)
+
+    def update_cats(self, events: list[Event]) -> None:
+        """@brief Move every cat towards the nearest free ball and scramble it on contact.
+        @param events Event list to append to.
+        """
+        world = self._world
+        free = [ball for ball in world.balls if ball.held_by is None]
+        for cat in list(self.cats):
+            cat.ttl -= 1
+            cat.cooldown = max(0, cat.cooldown - 1)
+            if cat.ttl <= 0:
+                self.cats.remove(cat)
+                continue
+            if not free:
+                continue
+            ball = min(free, key=lambda b: (b.pos - cat.pos).length())
+            delta = ball.pos - cat.pos
+            dist = delta.length()
+            if dist > 0.0:
+                step = min(c.CAT_SPEED * c.DT, dist)
+                cat.pos = cat.pos + delta * (step / dist)
+            if cat.cooldown == 0 and dist <= c.CAT_RADIUS + ball.radius:
+                self._pounce(cat, ball, events)
+
+    def _pounce(self, cat: Cat, ball: Ball, events: list[Event]) -> None:
+        rng = self._world.rng
+        angle = rng.uniform(0.0, 2.0 * math.pi)
+        factor = rng.uniform(c.CAT_MIN_SPEED_FACTOR, c.CAT_MAX_SPEED_FACTOR)
+        speed = min(c.BALL_START_SPEED * factor, c.BALL_MAX_SPEED)
+        ball.vel = Vec2.from_angle(angle, speed)
+        ball.toucher = cat.owner
+        cat.cooldown = c.CAT_COOLDOWN_TICKS
+        events.append(CatPounced(ball.pos.x, ball.pos.y))
 
     def _apply_one(
         self, effect: Effect, spec: EffectSpec, player: int, events: list[Event]
@@ -141,7 +198,7 @@ class ExtrasManager:
         @param events Event list to append to.
         """
         slot = self.weapons[player]
-        if slot is None:
+        if slot is None or self._mods[player].jammed:
             events.append(WeaponEmpty(player))
             return
         name, ammo = slot

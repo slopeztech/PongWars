@@ -53,6 +53,9 @@ class Mods:
     magnet: bool = False
     shield: bool = False
     blind: bool = False
+    drunk: bool = False
+    jammed: bool = False
+    aim: bool = False
 
 
 class Effect:
@@ -66,6 +69,7 @@ class Effect:
     category: ClassVar[str] = ""
     lasting: ClassVar[bool] = True  # False: applied once and never stored (e.g. multiball)
     on_opponents: ClassVar[bool] = False  # True: applied to the collector's opponents
+    single_target: ClassVar[bool] = False  # True: applied to the first target only
 
     def __init__(self, spec: EffectSpec) -> None:
         """@brief Create an effect instance.

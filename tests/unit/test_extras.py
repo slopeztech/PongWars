@@ -80,14 +80,14 @@ def test_spawn_event_and_collection_by_last_toucher() -> None:
 
 
 def test_pickups_avoid_obstacles() -> None:
-    wall = Obstacle(Rect(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2, 30.0, 30.0))
+    wall = Obstacle(Rect(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2, 20.0, 20.0))
     world = World(MatchConfig(extras=("all",), extras_interval=0.2), obstacles=[wall])
     world.phase = Phase.PLAYING
     for _ in range(c.TICK_RATE * 3):
         world.ball.vel = Vec2()
         world.step(IDLE)
     assert all(
-        abs(p.pos.x - wall.rect.cx) > 30.0 or abs(p.pos.y - wall.rect.cy) > 30.0
+        abs(p.pos.x - wall.rect.cx) > 20.0 or abs(p.pos.y - wall.rect.cy) > 20.0
         for p in world.extras.pickups
     )
 

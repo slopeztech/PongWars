@@ -27,23 +27,41 @@ VOLUME_SCALE = 100.0
 
 
 @dataclass(frozen=True)
+class Track:
+    """@brief A looping background track.
+
+    @param notes Semitones per step (None is a rest).
+    @param step Seconds per step.
+    @param wave Waveform.
+    @param volume Relative level.
+    """
+
+    notes: tuple[int | None, ...]
+    step: float
+    wave: str
+    volume: float
+
+
+MENU_TRACK = "menu"
+
+
+@dataclass(frozen=True)
 class SoundBank:
     """@brief Parsed audio data.
 
     @param events Event class name -> sound name.
     @param sounds Sound name -> tone description.
-    @param music_notes Semitones per step of the background loop (None is a rest).
-    @param music_step Seconds per music step.
-    @param music_wave Waveform of the music.
-    @param music_volume Relative level of the music.
+    @param tracks Track name -> background track.
     """
 
     events: dict[str, str]
     sounds: dict[str, ToneSpec]
-    music_notes: tuple[int | None, ...]
-    music_step: float
-    music_wave: str
-    music_volume: float
+    tracks: dict[str, Track]
+
+    @property
+    def match_tracks(self) -> list[str]:
+        """@brief Names of the tracks that can play during a match, sorted."""
+        return sorted(name for name in self.tracks if name != MENU_TRACK)
 
 
 def load_bank(path: Path = SOUNDS_FILE) -> SoundBank:
@@ -67,16 +85,16 @@ def load_bank(path: Path = SOUNDS_FILE) -> SoundBank:
     for event, sound in events.items():
         if sound not in sounds:
             raise ValueError(f"event {event} maps to unknown sound {sound}")
-    music = data["music"]
-    notes = tuple(None if int(n) == REST else int(n) for n in music["notes"])
-    return SoundBank(
-        events,
-        sounds,
-        notes,
-        float(music["step_seconds"]),
-        str(music["wave"]),
-        float(music["volume"]),
-    )
+    tracks = {
+        name: Track(
+            tuple(None if int(n) == REST else int(n) for n in raw["notes"]),
+            float(raw["step_seconds"]),
+            str(raw["wave"]),
+            float(raw["volume"]),
+        )
+        for name, raw in data["music"].items()
+    }
+    return SoundBank(events, sounds, tracks)
 
 
 class AudioPlayer:
@@ -100,7 +118,8 @@ class AudioPlayer:
         self.sfx = sfx
         self.enabled = self._open_mixer()
         self._sounds: dict[str, pygame.mixer.Sound] = {}
-        self._music_sound: pygame.mixer.Sound | None = None
+        self._music_sounds: dict[str, pygame.mixer.Sound] = {}
+        self._current_track = ""
         self._music_channel: pygame.mixer.Channel | None = None
 
     @staticmethod
@@ -156,19 +175,24 @@ class AudioPlayer:
                 started += 1
         return started
 
-    def start_music(self) -> None:
-        """@brief Start the background loop (no-op when silent or already playing)."""
-        if not self.enabled or (self._music_channel and self._music_channel.get_busy()):
+    def start_music(self, track: str = MENU_TRACK) -> None:
+        """@brief Loop a background track (no-op when silent or that track is already playing).
+        @param track Track name from the bank; an unknown name falls back to the menu track.
+        """
+        if track not in self.bank.tracks:
+            track = MENU_TRACK
+        if not self.enabled:
             return
-        if self._music_sound is None:
-            samples = render_melody(
-                self.bank.music_notes,
-                self.bank.music_step,
-                self.bank.music_wave,
-                self.bank.music_volume,
-            )
-            self._music_sound = pygame.mixer.Sound(buffer=samples.tobytes())
-        self._music_channel = self._music_sound.play(loops=-1)
+        if self._music_channel and self._music_channel.get_busy():
+            if track == self._current_track:
+                return
+            self._music_channel.stop()
+        if track not in self._music_sounds:
+            spec = self.bank.tracks[track]
+            samples = render_melody(spec.notes, spec.step, spec.wave, spec.volume)
+            self._music_sounds[track] = pygame.mixer.Sound(buffer=samples.tobytes())
+        self._current_track = track
+        self._music_channel = self._music_sounds[track].play(loops=-1)
         self._apply_music_volume()
 
     def stop_music(self) -> None:
@@ -176,3 +200,4 @@ class AudioPlayer:
         if self._music_channel is not None:
             self._music_channel.stop()
         self._music_channel = None
+        self._current_track = ""

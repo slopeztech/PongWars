@@ -2,6 +2,7 @@
 @brief Draws a read-only `World` as an 8-bit pseudo-3D scene on a low-resolution surface.
 """
 
+import math
 import random
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from pongwars.domain.events import (
 )
 from pongwars.domain.world import SEAT_LEFT, SEAT_RIGHT, SEAT_TOP, Phase, World
 from pongwars.render import palette as pal
+from pongwars.render.backgrounds import draw_background
 from pongwars.render.camera import DEFAULT_BACK, DEFAULT_FOCAL, DEFAULT_HEIGHT, Camera
 from pongwars.render.effects import ParticleSystem, Shake, Trail
 from pongwars.render.font import draw_text, text_width
@@ -46,6 +48,13 @@ FRONT_FACE_SHADE = 0.6
 SEAT_TURNS = {3: 0, 1: 1, 2: 2, 0: 3}
 SPLIT_COLUMNS = 2
 PICKUP_HEIGHT = 3.0
+SKIN_STRIPED = 1
+SKIN_GLOW = 2
+SKIN_CAPPED = 3
+STRIPES = 6
+GRID_STEP = 20
+STRIPE_SHADE = 0.6
+CAP_SIZE = 3.0
 PICKUP_BLINK_TICKS = 120
 PICKUP_BLINK_PERIOD = 6
 SHIELD_GAP = 1.5
@@ -80,6 +89,9 @@ class RenderSettings:
     shake: bool = True
     scale: int = 4
     view: ViewMode = "shared"
+    background: str = "grid"
+    paddle_colors: tuple[int, ...] = (0, 1, 2, 3)
+    paddle_skins: tuple[int, ...] = (0, 0, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -133,6 +145,11 @@ class Renderer:
         self.shake = Shake(seed)
         self._noise = random.Random(seed)  # noqa: S311 - visual only
         self._lasers: list[tuple[Point, Point, pal.Color, int]] = []
+        self._clock = 0
+        self.colors = [
+            pal.PADDLE_PALETTE[i % len(pal.PADDLE_PALETTE)] for i in self.settings.paddle_colors
+        ]
+        self.colors += list(pal.PLAYER_COLORS[len(self.colors) :])
 
     def handle_events(self, world: World, events: Iterable[Event]) -> None:
         """@brief React to simulation events with visual effects.
@@ -147,7 +164,7 @@ class Renderer:
                     (
                         (rect.cx, rect.cy),
                         (event.x, event.y),
-                        pal.PLAYER_COLORS[event.player],
+                        self.colors[event.player],
                         LASER_FRAMES,
                     )
                 )
@@ -155,7 +172,7 @@ class Renderer:
             elif isinstance(event, PickupCollected):
                 self._burst(pos.x, pos.y, pal.LIME, 10)
             elif isinstance(event, PaddleHit):
-                color = pal.PLAYER_COLORS[event.player]
+                color = self.colors[event.player]
                 self._burst(pos.x, pos.y, color, 8)
                 self._shake(SHAKE_HIT)
             elif isinstance(event, WallHit | BumperHit):
@@ -171,6 +188,7 @@ class Renderer:
         @param dt Real frame time in seconds.
         """
         self.particles.update(dt)
+        self._clock += 1
         self._lasers = [(a, b, col, n - 1) for a, b, col, n in self._lasers if n > 1]
         if self.settings.trail and world.phase.value == "playing":
             self.trail.push(world.ball.pos.x, world.ball.pos.y)
@@ -193,6 +211,7 @@ class Renderer:
         for view in self.viewports(world):
             self._canvas = self.surface.subsurface(view.rect)
             self.camera = self._camera_for(view)
+            draw_background(self._canvas, self.settings.background, self._clock)
             self._draw_scene(world)
             self._draw_hud(world, view)
         self._canvas = self.surface
@@ -241,6 +260,7 @@ class Renderer:
         items += [
             (self._sort(p.pos.x, p.pos.y), "pickup", i) for i, p in enumerate(world.extras.pickups)
         ]
+        items += [(self._sort(k.pos.x, k.pos.y), "cat", i) for i, k in enumerate(world.extras.cats)]
         for _, kind, index in sorted(items):
             if kind == "obstacle":
                 obstacle = world.obstacles[index]
@@ -248,14 +268,74 @@ class Renderer:
                     obstacle.rect, OBSTACLE_HEIGHT, KIND_COLORS.get(obstacle.kind, pal.LAVENDER)
                 )
             elif kind == "paddle":
-                self._box(world.paddles[index].rect, PADDLE_HEIGHT, pal.PLAYER_COLORS[index])
+                self._paddle(world, index)
             elif kind == "pickup":
                 self._pickup(world, index)
+            elif kind == "cat":
+                self._cat(world, index)
             else:
                 self._ball(world, index)
         self._draw_shields(world)
         self._draw_lasers()
         self._draw_particles()
+
+    def _paddle(self, world: World, index: int) -> None:
+        rect = world.paddles[index].rect
+        color = self.colors[index]
+        skin = self.settings.paddle_skins[index] if index < len(self.settings.paddle_skins) else 0
+        self._box(rect, PADDLE_HEIGHT, color)
+        x0, x1 = rect.cx - rect.half_w, rect.cx + rect.half_w
+        y0, y1 = rect.cy - rect.half_h, rect.cy + rect.half_h
+        top = PADDLE_HEIGHT
+        if skin == SKIN_STRIPED:
+            vertical = rect.half_h >= rect.half_w
+            for k in range(1, STRIPES, 2):
+                f0, f1 = k / STRIPES, (k + 1) / STRIPES
+                if vertical:
+                    ya, yb = y0 + (y1 - y0) * f0, y0 + (y1 - y0) * f1
+                    corners = [(x0, ya, top), (x1, ya, top), (x1, yb, top), (x0, yb, top)]
+                else:
+                    xa, xb = x0 + (x1 - x0) * f0, x0 + (x1 - x0) * f1
+                    corners = [(xa, y0, top), (xb, y0, top), (xb, y1, top), (xa, y1, top)]
+                self._quad(corners, pal.shade(color, STRIPE_SHADE))
+        elif skin == SKIN_GLOW:
+            pulse = 0.75 + 0.25 * math.sin(self._clock / 6.0 + index)
+            self._quad(
+                [(x0, y0, top), (x1, y0, top), (x1, y1, top), (x0, y1, top)],
+                pal.shade(pal.WHITE, pulse),
+            )
+        elif skin == SKIN_CAPPED:
+            vertical = rect.half_h >= rect.half_w
+            cap = CAP_SIZE
+            ends = (
+                [(x0, y0, top), (x1, y0, top), (x1, y0 + cap, top), (x0, y0 + cap, top)],
+                [(x0, y1 - cap, top), (x1, y1 - cap, top), (x1, y1, top), (x0, y1, top)],
+            )
+            if not vertical:
+                ends = (
+                    [(x0, y0, top), (x0 + cap, y0, top), (x0 + cap, y1, top), (x0, y1, top)],
+                    [(x1 - cap, y0, top), (x1, y0, top), (x1, y1, top), (x1 - cap, y1, top)],
+                )
+            for corners in ends:
+                self._quad(corners, pal.WHITE)
+
+    def _cat(self, world: World, index: int) -> None:
+        cat = world.extras.cats[index]
+        ground = self.camera.project(cat.pos.x, cat.pos.y, 0.0)
+        body = self.camera.project(cat.pos.x, cat.pos.y, BALL_LIFT)
+        r = max(2, round(c.CAT_RADIUS * body.scale))
+        cx, cy = round(body.sx), round(body.sy)
+        shadow = pygame.Rect(0, 0, r * 2, max(1, r // 2))
+        shadow.center = (round(ground.sx), round(ground.sy))
+        pygame.draw.ellipse(self._canvas, pal.shade(pal.NAVY, 0.4), shadow)
+        pygame.draw.circle(self._canvas, pal.ORANGE, (cx, cy), r)
+        for side in (-1, 1):
+            ear = [(cx + side * r, cy - r // 2), (cx + side * (r // 2), cy - r - 1)]
+            pygame.draw.polygon(self._canvas, pal.ORANGE, [*ear, (cx + side * r // 3, cy - r // 2)])
+        self._canvas.fill(pal.BLACK, (cx - r // 2, cy - r // 3, 1, 1))
+        self._canvas.fill(pal.BLACK, (cx + r // 2 - 1, cy - r // 3, 1, 1))
+        tail_x = cx + (r + 1) * (1 if (self._clock // 8) % 2 else -1)
+        pygame.draw.line(self._canvas, pal.ORANGE, (cx, cy + r // 2), (tail_x, cy - r // 2))
 
     def _sort(self, x: float, y: float) -> float:
         return self.camera.rotate(x - c.FIELD_WIDTH / 2, y - c.FIELD_HEIGHT / 2)[1]
@@ -278,6 +358,8 @@ class Renderer:
     def _draw_table(self, world: World) -> None:
         w, h = c.FIELD_WIDTH, c.FIELD_HEIGHT
         self._quad([(0, 0, 0), (w, 0, 0), (w, h, 0), (0, h, 0)], pal.NAVY)
+        if self.settings.background == "grid":
+            self._draw_grid()
         walls = (
             (world.players < 3 or not world.alive[2], 0.0),
             (world.players < 4 or not world.alive[3], h),
@@ -292,6 +374,18 @@ class Renderer:
             (round(mid[0].sx), round(mid[0].sy)),
             (round(mid[1].sx), round(mid[1].sy)),
         )
+
+    def _draw_grid(self) -> None:
+        w, h = c.FIELD_WIDTH, c.FIELD_HEIGHT
+        color = pal.shade(pal.NAVY, 1.5)
+        offset = (self._clock // 4) % GRID_STEP
+        for k in range(-1, int(w // GRID_STEP) + 1):
+            x = k * GRID_STEP + offset
+            if 0 <= x <= w:
+                a, b = self.camera.project(x, 0, 0), self.camera.project(x, h, 0)
+                pygame.draw.line(
+                    self._canvas, color, (round(a.sx), round(a.sy)), (round(b.sx), round(b.sy))
+                )
 
     def _box(self, rect: Rect, height: float, color: pal.Color) -> None:
         x0, x1 = rect.cx - rect.half_w, rect.cx + rect.half_w
@@ -354,7 +448,7 @@ class Renderer:
             pb = self.camera.project(b[0], b[1], BALL_LIFT)
             pygame.draw.line(
                 self._canvas,
-                pal.PLAYER_COLORS[seat],
+                self.colors[seat],
                 (round(pa.sx), round(pa.sy)),
                 (round(pb.sx), round(pb.sy)),
             )
@@ -438,7 +532,7 @@ class Renderer:
                     " ".join(parts).upper(),
                     HUD_MARGIN,
                     h - EFFECT_ROW * (row + 1),
-                    pal.PLAYER_COLORS[seat],
+                    self.colors[seat],
                     SMALL_TEXT,
                 )
                 row += 1
@@ -460,7 +554,7 @@ class Renderer:
             slots = [mid - SHARED_DUEL_OFFSET, mid + SHARED_DUEL_OFFSET]
         for seat, score in enumerate(world.scores):
             x = slots[seat]
-            color = pal.PLAYER_COLORS[seat] if world.alive[seat] else pal.DARK_GREY
+            color = self.colors[seat] if world.alive[seat] else pal.DARK_GREY
             label, value = self._seat_label(seat), str(score)
             width = max(text_width(value, BIG_TEXT), text_width(label, SMALL_TEXT))
             if world.players > SPLIT_COLUMNS and seat == 1:
@@ -473,7 +567,7 @@ class Renderer:
     def _draw_split_scores(self, world: World, own: int, w: int) -> None:
         x = HUD_MARGIN
         for seat in sorted(range(world.players), key=lambda s: s != own):
-            color = pal.PLAYER_COLORS[seat] if world.alive[seat] else pal.DARK_GREY
+            color = self.colors[seat] if world.alive[seat] else pal.DARK_GREY
             text = f"{self._seat_label(seat)} {world.scores[seat]}"
             size = BIG_TEXT if seat == own else SMALL_TEXT
             if x + text_width(text, size) > w:

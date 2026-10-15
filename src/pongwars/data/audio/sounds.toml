@@ -18,6 +18,30 @@ WeaponEmpty = "empty"
 ShieldUsed = "shield"
 BombDetonated = "bomb"
 SuddenDeath = "alarm"
+CatReleased = "meow"
+CatPounced = "pounce"
+BallWarped = "warp"
+
+[sounds.meow]
+wave = "triangle"
+from = 500
+to = 900
+duration = 0.25
+volume = 0.45
+
+[sounds.pounce]
+wave = "square"
+from = 1000
+to = 350
+duration = 0.1
+volume = 0.4
+
+[sounds.warp]
+wave = "triangle"
+from = 1200
+to = 200
+duration = 0.2
+volume = 0.4
 
 [sounds.serve]
 wave = "triangle"
@@ -127,9 +151,45 @@ to = 400
 duration = 0.3
 volume = 0.4
 
-# Looping background phrase: semitones from A4 per step, -99 marks a rest.
-[music]
+# Looping background tracks: semitones from A4 per step, -99 marks a rest.
+# The `menu` track plays on the menus; every other track is a candidate for matches.
+[music.menu]
+step_seconds = 0.26
+wave = "triangle"
+volume = 0.3
+notes = [-12, -99, -8, -99, -5, -99, -8, -99, -10, -99, -7, -99, -3, -99, -7, -99,
+         -12, -99, -8, -99, -5, -99, 0, -99, -3, -99, -5, -99, -8, -99, -99, -99]
+
+[music.arcade]
 step_seconds = 0.22
 wave = "triangle"
 volume = 0.35
 notes = [-12, -99, -5, -99, -12, -99, -3, -99, -10, -99, -3, -99, -10, -99, -1, -99]
+
+[music.chase]
+step_seconds = 0.12
+wave = "square"
+volume = 0.18
+notes = [-12, -12, 0, -12, -12, 0, -12, 3, -10, -10, 2, -10, -10, 2, -10, 5,
+         -8, -8, 4, -8, -8, 4, -8, 7, -10, -10, 2, -10, -10, 2, -10, 0]
+
+[music.hero]
+step_seconds = 0.16
+wave = "square"
+volume = 0.2
+notes = [0, -99, 4, -99, 7, -99, 12, -99, 11, -99, 7, -99, 4, -99, 7, -99,
+         2, -99, 5, -99, 9, -99, 14, -99, 12, -99, 9, -99, 5, -99, 9, -99]
+
+[music.dusk]
+step_seconds = 0.34
+wave = "triangle"
+volume = 0.35
+notes = [-12, -99, -99, -9, -99, -99, -5, -99, -99, -9, -99, -99,
+         -14, -99, -99, -11, -99, -99, -7, -99, -99, -11, -99, -99]
+
+[music.boss]
+step_seconds = 0.14
+wave = "square"
+volume = 0.18
+notes = [-24, -24, -99, -24, -21, -99, -24, -99, -19, -19, -99, -19, -18, -99, -19, -99,
+         -24, -24, -99, -24, -21, -99, -24, -99, -17, -99, -18, -99, -19, -99, -21, -99]

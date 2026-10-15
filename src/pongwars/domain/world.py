@@ -22,6 +22,7 @@ from pongwars.domain.events import (
     WallHit,
 )
 from pongwars.domain.extras import ExtrasManager
+from pongwars.domain.extras.effects import opponents
 from pongwars.domain.modes import create_mode
 from pongwars.domain.physics import reflect, sweep_circle_rect
 from pongwars.domain.rng import RandomSource
@@ -101,6 +102,9 @@ class World:
             mods = self.extras.mods(seat)
             move = inputs.moves[seat] if seat < len(inputs.moves) else 0.0
             move = max(-1.0, min(1.0, move)) * (-1.0 if mods.invert else 1.0)
+            if mods.drunk:
+                move += c.DRUNK_AMPLITUDE * math.sin(self.tick * c.DRUNK_FREQUENCY + seat)
+                move = max(-1.0, min(1.0, move))
             if mods.frozen:
                 move = 0.0
             size = c.FIELD_HEIGHT if paddle.axis == "y" else c.FIELD_WIDTH
@@ -118,6 +122,7 @@ class World:
                     self._move_ball(ball, events)
             if self.phase is Phase.PLAYING:
                 self.extras.update_pickups(events)
+                self.extras.update_cats(events)
         self.mode.on_tick(self, events)
         winner = self.mode.winner(self)
         if winner is not None:
@@ -281,6 +286,22 @@ class World:
             offset = (ball.pos.x - rect.cx) / (rect.half_w + ball.radius)
             angle = max(-1.0, min(1.0, offset)) * c.MAX_BOUNCE_ANGLE
             ball.vel = Vec2(math.sin(angle), normal.y * math.cos(angle)) * speed
+        if self.extras.mods(index).aim:
+            self._aim(ball, index, normal, speed)
+
+    def _aim(self, ball: Ball, index: int, normal: Vec2, speed: float) -> None:
+        targets = opponents(self, index)
+        if not targets:
+            return
+        goal = self.paddles[targets[0]].rect
+        want = Vec2(goal.cx - ball.pos.x, goal.cy - ball.pos.y)
+        length = want.length()
+        if length == 0.0:
+            return
+        mixed = ball.vel * (1.0 / speed) + want * (1.0 / length)
+        if mixed.x * normal.x + mixed.y * normal.y <= 0.1 * mixed.length():
+            return
+        ball.vel = mixed * (speed / mixed.length())
 
     def _bounce_borders(self, ball: Ball, events: list[Event]) -> None:
         r = ball.radius
@@ -348,6 +369,7 @@ class World:
             self.extra_balls.remove(ball)
             return
         self.extra_balls.clear()
+        self.extras.cats.clear()
         self.ball = Ball(Vec2(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2), Vec2(), c.BALL_RADIUS)
         self.phase = Phase.SERVING
         self._serve_timer = c.SERVE_DELAY_TICKS

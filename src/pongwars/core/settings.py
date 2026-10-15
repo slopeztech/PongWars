@@ -19,6 +19,24 @@ MAX_VOLUME = 100
 MIN_SCALE = 2
 MAX_SCALE = 8
 VIEW_MODES = ("shared", "split")
+BACKGROUNDS = ("none", "grid", "stars", "rain", "waves", "aurora")
+PADDLE_COLOR_COUNT = 8
+PADDLE_SKIN_COUNT = 4
+SEATS = 4
+
+
+def _fit_seats(values: list[int], default: list[int], count: int) -> list[int]:
+    """@brief Coerce a per-seat list to SEATS valid indices below count.
+    @param values Raw list.
+    @param default Fallback list.
+    @param count Exclusive upper bound of valid indices.
+    @return A list of exactly SEATS valid ints.
+    """
+    result = list(default)
+    for seat, value in enumerate(values[:SEATS]):
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < count:
+            result[seat] = value
+    return result
 
 
 def user_config_dir() -> Path:
@@ -48,6 +66,10 @@ class Settings:
     trail: bool = True
     shake: bool = True
     view: str = "shared"
+    music_track: str = "random"
+    background: str = "grid"
+    paddle_colors: list[int] = field(default_factory=lambda: [0, 1, 2, 3])
+    paddle_skins: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     keys: dict[str, list[int]] = field(default_factory=dict)
 
     def sanitize(self) -> None:
@@ -57,6 +79,10 @@ class Settings:
         self.scale = max(MIN_SCALE, min(MAX_SCALE, int(self.scale)))
         if self.view not in VIEW_MODES:
             self.view = "shared"
+        if self.background not in BACKGROUNDS:
+            self.background = "grid"
+        self.paddle_colors = _fit_seats(self.paddle_colors, [0, 1, 2, 3], PADDLE_COLOR_COUNT)
+        self.paddle_skins = _fit_seats(self.paddle_skins, [0, 0, 0, 0], PADDLE_SKIN_COUNT)
 
     def to_json(self) -> str:
         """@brief Serialise to JSON text.

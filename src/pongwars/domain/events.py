@@ -128,5 +128,28 @@ class BombDetonated(Event):
 
 
 @dataclass(frozen=True)
+class CatReleased(Event):
+    """@brief A cat was dropped on the table. @param player Owner of the cat."""
+
+    player: int
+
+
+@dataclass(frozen=True)
+class CatPounced(Event):
+    """@brief A cat scrambled a ball's direction and speed. @param x Ball x. @param y Ball y."""
+
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
+class BallWarped(Event):
+    """@brief A ball was teleported. @param x New x. @param y New y."""
+
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
 class SuddenDeath(Event):
     """@brief Time ran out on a tie; the next goal wins."""

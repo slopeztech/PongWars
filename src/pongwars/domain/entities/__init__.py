@@ -75,6 +75,19 @@ class Ball:
 
 
 @dataclass
+class Cat:
+    """@brief A cat released by a weapon: chases the nearest ball and scrambles it on contact.
+
+    `cooldown` counts the ticks left before the cat may pounce again.
+    """
+
+    pos: Vec2
+    owner: int
+    ttl: int
+    cooldown: int = 0
+
+
+@dataclass
 class Obstacle:
     """@brief Rectangular obstacle: solid, bumper or destructible; optionally patrolling."""
 

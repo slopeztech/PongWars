@@ -22,6 +22,8 @@ from pongwars.render.font import normalize, unsupported_chars
 from pongwars.render.renderer import LOW_H, LOW_W
 from pongwars.ui.core import AppContext
 from pongwars.ui.screens import (
+    AppearanceScreen,
+    HowToPlayScreen,
     MainMenuScreen,
     MatchScreen,
     PauseScreen,
@@ -111,7 +113,9 @@ def test_bank_maps_every_event_to_a_sound() -> None:
     bank = load_bank()
     assert "Goal" in bank.events
     assert set(bank.events.values()) <= set(bank.sounds)
-    assert bank.music_notes
+    assert bank.match_tracks
+    assert "menu" in bank.tracks and "menu" not in bank.match_tracks
+    assert all(track.notes for track in bank.tracks.values())
 
 
 def test_player_plays_and_handles_events(ctx: AppContext) -> None:
@@ -122,6 +126,8 @@ def test_player_plays_and_handles_events(ctx: AppContext) -> None:
     assert not audio.play("does_not_exist")
     assert audio.handle_events([Goal(scorer=0, conceded=1)]) == 1
     audio.start_music()
+    audio.start_music(audio.bank.match_tracks[0])
+    audio.start_music("no_such_track")
     audio.set_volumes(0, 0, 0)
     audio.stop_music()
 
@@ -241,6 +247,14 @@ def test_main_menu_entries(ctx: AppContext) -> None:
     assert setup.controllers == ["human", "ai"]
     ctx.stack.pop()
     menu.handle_event(key(pygame.K_DOWN))  # skips the two disabled LAN rows
+    menu.handle_event(key(pygame.K_RETURN))
+    assert isinstance(ctx.stack.top, AppearanceScreen)
+    ctx.stack.pop()
+    menu.handle_event(key(pygame.K_DOWN))
+    menu.handle_event(key(pygame.K_RETURN))
+    assert isinstance(ctx.stack.top, HowToPlayScreen)
+    ctx.stack.pop()
+    menu.handle_event(key(pygame.K_DOWN))
     menu.handle_event(key(pygame.K_RETURN))
     assert isinstance(ctx.stack.top, SettingsScreen)
     ctx.stack.pop()
