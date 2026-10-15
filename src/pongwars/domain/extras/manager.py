@@ -146,11 +146,13 @@ class ExtrasManager:
             if not free:
                 continue
             ball = min(free, key=lambda b: (b.pos - cat.pos).length())
-            delta = ball.pos - cat.pos
-            dist = delta.length()
-            if dist > 0.0:
-                step = min(c.CAT_SPEED * c.DT, dist)
-                cat.pos = cat.pos + delta * (step / dist)
+            dist = (ball.pos - cat.pos).length()
+            lead = min(dist / c.CAT_SPEED, 0.4)
+            delta = ball.pos + ball.vel * lead - cat.pos
+            reach = delta.length()
+            if reach > 0.0:
+                step = min(c.CAT_SPEED * c.DT, reach)
+                cat.pos = cat.pos + delta * (step / reach)
             if cat.cooldown == 0 and dist <= c.CAT_RADIUS + ball.radius:
                 self._pounce(cat, ball, events)
 

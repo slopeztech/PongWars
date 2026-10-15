@@ -491,6 +491,7 @@ class LanHostMatchScreen(MatchScreen):
         self.local = KeyboardInput(ctx.keymap.get(0), pygame.key.get_pressed)
         self.bots: dict[int, AIController] = {}
         self._drop_shown = False
+        self._fire_tap = False
 
     def _bot(self, seat: int) -> AIController:
         if seat not in self.bots:
@@ -505,7 +506,9 @@ class LanHostMatchScreen(MatchScreen):
 
     def _local_input(self, seat: int) -> tuple[float, bool]:
         if seat == 0:
-            return self.local.poll(), bool(pygame.key.get_pressed()[FIRE_KEYS[0]])
+            fire = self._fire_tap or bool(pygame.key.get_pressed()[FIRE_KEYS[0]])
+            self._fire_tap = False
+            return self.local.poll(), fire
         return self._bot(seat).poll(), False
 
     def _step(self) -> None:
@@ -519,6 +522,8 @@ class LanHostMatchScreen(MatchScreen):
         """
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.ctx.stack.push(LanQuitScreen(self.ctx, lambda: self.host.close("closed")))
+        elif event.type == pygame.KEYDOWN and event.key == FIRE_KEYS[0]:
+            self._fire_tap = True
 
     def update(self, dt: float) -> None:
         """@brief Serve the network and advance the match.
@@ -558,11 +563,13 @@ class LanClientMatchScreen(Screen):
         self.renderer = Renderer(_render_settings(ctx), client.config.seed, ctx.translator)
         self.input = KeyboardInput(ctx.keymap.get(0), pygame.key.get_pressed)
         self.loop = FixedStepLoop(self._tick, c.DT)
+        self._fire_tap = False
         tracks = ctx.audio.bank.match_tracks
         ctx.audio.start_music(tracks[client.config.seed % len(tracks)] if tracks else "menu")
 
     def _tick(self) -> None:
-        fire = bool(pygame.key.get_pressed()[FIRE_KEYS[0]])
+        fire = self._fire_tap or bool(pygame.key.get_pressed()[FIRE_KEYS[0]])
+        self._fire_tap = False
         self.client.send_input(self.input.poll(), fire)
 
     def handle_event(self, event: pygame.event.Event) -> None:
@@ -571,6 +578,8 @@ class LanClientMatchScreen(Screen):
         """
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.ctx.stack.push(LanQuitScreen(self.ctx, self.client.close))
+        elif event.type == pygame.KEYDOWN and event.key == FIRE_KEYS[0]:
+            self._fire_tap = True
 
     def update(self, dt: float) -> None:
         """@brief Receive state, send inputs and detect the end of the match.

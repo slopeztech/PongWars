@@ -17,6 +17,7 @@ from pongwars.domain.config import AI_DIFFICULTIES, MAX_PLAYERS, ConfigError, Ma
 from pongwars.domain.modes import MODES, OptionSpec
 from pongwars.domain.world import Phase, World
 from pongwars.input.controllers import (
+    FIRE_KEYS,
     KeyBinding,
     KeyboardInput,
     KeyMap,
@@ -446,6 +447,7 @@ class MatchScreen(Screen):
         self.renderer = Renderer(render_settings, config.seed, ctx.translator)
         self.humans = [config.controllers[i] == "human" for i in range(self.world.players)]
         self.controllers = [self._controller(i) for i in range(self.world.players)]
+        self._fire_taps = [False] * self.world.players
         self.loop = FixedStepLoop(self._step, c.DT)
         self.paused = False
         ctx.audio.start_music(self._pick_track(config.seed))
@@ -469,7 +471,12 @@ class MatchScreen(Screen):
         return KeyboardInput(self.ctx.keymap.get(seat), pygame.key.get_pressed)
 
     def _step(self) -> None:
-        fire = poll_fire(self.humans, pygame.key.get_pressed)
+        held = poll_fire(self.humans, pygame.key.get_pressed)
+        fire = tuple(
+            h or (p and human)
+            for h, p, human in zip(held, self._fire_taps, self.humans, strict=False)
+        )
+        self._fire_taps = [False] * len(self._fire_taps)
         events = self.world.step(collect_inputs(self.controllers, fire))
         self.renderer.handle_events(self.world, events)
         self.ctx.audio.handle_events(events)
@@ -480,6 +487,10 @@ class MatchScreen(Screen):
         """
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.ctx.stack.push(PauseScreen(self.ctx))
+        elif event.type == pygame.KEYDOWN and event.key in FIRE_KEYS:
+            seat = FIRE_KEYS.index(event.key)
+            if seat < len(self._fire_taps):
+                self._fire_taps[seat] = True
 
     def update(self, dt: float) -> None:
         """@brief Advance the simulation unless a overlay is on top.
