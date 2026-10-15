@@ -142,7 +142,14 @@ def collect_inputs(controllers: Sequence[PlayerInput], fire: Sequence[bool] = ()
     @param fire Fire button state per seat (missing seats count as released).
     @return The frame inputs.
     """
-    return FrameInputs(tuple(controller.poll() for controller in controllers), tuple(fire))
+    moves = tuple(controller.poll() for controller in controllers)
+    shots = list(fire)
+    for seat, controller in enumerate(controllers):
+        intent = getattr(controller, "fire_intent", None)
+        if intent is not None:
+            shots += [False] * (seat + 1 - len(shots))
+            shots[seat] = shots[seat] or bool(intent())
+    return FrameInputs(moves, tuple(shots))
 
 
 def poll_fire(

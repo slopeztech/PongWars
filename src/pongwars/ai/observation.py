@@ -32,6 +32,10 @@ class Observation:
     @param walls Per seat: True if that side of the field is a reflective wall.
     @param obstacles Active obstacles.
     @param tick Simulation tick of the snapshot.
+    @param weapon Name of the weapon held by the observer, if any.
+    @param jammed True while the observer cannot fire weapons.
+    @param holding True while the observer is holding a ball (magnet).
+    @param foes Paddle rectangles of the opponents still alive.
     """
 
     seat: int
@@ -43,6 +47,10 @@ class Observation:
     walls: tuple[bool, ...]
     obstacles: tuple[ObstacleView, ...]
     tick: int
+    weapon: str | None = None
+    jammed: bool = False
+    holding: bool = False
+    foes: tuple[Rect, ...] = ()
 
     @property
     def paddle_pos(self) -> float:
@@ -68,6 +76,13 @@ class Observation:
             for o in world.obstacles
             if o.active
         )
+        slot = world.extras.weapons[seat]
+        foes = tuple(
+            Rect(r.cx, r.cy, r.half_w, r.half_h)
+            for r in (
+                world.paddles[s].rect for s in range(world.players) if s != seat and world.alive[s]
+            )
+        )
         return Observation(
             seat=seat,
             axis=paddle.axis,
@@ -78,4 +93,8 @@ class Observation:
             walls=walls,
             obstacles=obstacles,
             tick=world.tick,
+            weapon=slot[0] if slot else None,
+            jammed=world.extras.mods(seat).jammed,
+            holding=any(b.held_by == seat for b in world.balls),
+            foes=foes,
         )

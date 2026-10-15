@@ -50,7 +50,7 @@ ender/camera.py) drawing onto a 320x180 surface scaled up; input lives in input/
 
 ## Extras
 
-Powers, weapons, penalties and statuses are Effect subclasses registered in domain.extras.effects.EFFECTS and balanced in data/extras/extras.toml. ExtrasManager (owned by World) spawns pickups, applies effects and exposes per-player Mods that World.step reads. Fire keys per seat: D, LEFT, K, KP5. The AI never fires. HUD codes come from the `extras.NAME.short` locale keys.
+Powers, weapons, penalties and statuses are Effect subclasses registered in domain.extras.effects.EFFECTS and balanced in data/extras/extras.toml. ExtrasManager (owned by World) spawns pickups, applies effects and exposes per-player Mods that World.step reads. Fire keys per seat: D, LEFT, K, KP5. AI seats fire too: `AIController.fire_intent()` (heuristics in `ai/extras.py`, paced by the difficulty profile) is merged into the inputs by `collect_inputs` and the LAN host. HUD codes come from the `extras.NAME.short` locale keys.
 
 ## UI, audio and settings
 

@@ -139,3 +139,86 @@ def test_ai_plays_a_top_seat() -> None:
     for _ in range(600):
         world.step(FrameInputs(tuple(b.poll() for b in bots)))
     assert all(abs(m) <= 1.0 for m in (b.poll() for b in bots))
+
+
+def _fires_within(world: World, ai: AIController, ticks: int) -> bool:
+    for _ in range(ticks):
+        ai.poll()
+        if ai.fire_intent():
+            return True
+    return False
+
+
+@pytest.mark.parametrize("weapon", ["freeze", "hex", "laser", "cat", "bomb", "warp"])
+def test_ai_uses_held_weapon(weapon: str) -> None:
+    world = _world()
+    world.extras.weapons[0] = (weapon, 1)
+    paddle = world.paddles[0].rect
+    if weapon == "bomb":
+        world.ball.pos = Vec2(paddle.cx + 10.0, paddle.cy)
+        world.ball.vel = Vec2(-60.0, 0.0)
+    elif weapon == "cat":
+        world.ball.vel = Vec2(60.0, 0.0)
+    elif weapon == "warp":
+        world.ball.pos = Vec2(paddle.cx + 60.0, paddle.cy + 60.0)
+        world.ball.vel = Vec2(-60.0, 0.0)
+    ai = AIController(_observer(world, 0), "insane", seed=3)
+    assert _fires_within(world, ai, 600)
+
+
+def test_ai_does_not_fire_without_weapon() -> None:
+    world = _world()
+    ai = AIController(_observer(world, 0), "insane", seed=3)
+    assert not _fires_within(world, ai, 300)
+
+
+def test_ai_does_not_fire_when_jammed() -> None:
+    world = _world()
+    world.extras.weapons[0] = ("freeze", 1)
+    world.extras.apply_direct("jammed", 0, [])
+    ai = AIController(_observer(world, 0), "insane", seed=3)
+    assert not _fires_within(world, ai, 300)
+
+
+def test_ai_fire_is_a_single_tick_pulse() -> None:
+    world = _world()
+    world.extras.weapons[0] = ("freeze", 5)
+    ai = AIController(_observer(world, 0), "insane", seed=3)
+    states = []
+    for _ in range(200):
+        ai.poll()
+        states.append(ai.fire_intent())
+    assert any(states)
+    assert not any(a and b for a, b in zip(states, states[1:], strict=False))
+
+
+def test_harder_ai_fires_sooner() -> None:
+    def first_fire(level: str) -> int:
+        world = _world()
+        world.extras.weapons[0] = ("freeze", 1)
+        ai = AIController(_observer(world, 0), level, seed=5)
+        for tick in range(2000):
+            ai.poll()
+            if ai.fire_intent():
+                return tick
+        return 2000
+
+    assert first_fire("insane") < first_fire("easy")
+
+
+def test_ai_match_consumes_weapons() -> None:
+    world = _world(seed=7)
+    ais = [AIController(_observer(world, s), "hard", seed=s) for s in range(2)]
+    fired = False
+    for _ in range(3000):
+        if world.phase is Phase.FINISHED:
+            break
+        for seat in range(2):
+            if world.extras.weapons[seat] is None:
+                world.extras.weapons[seat] = ("freeze", 1)
+        before = [w for w in world.extras.weapons]
+        world.step(FrameInputs(tuple(a.poll() for a in ais), tuple(a.fire_intent() for a in ais)))
+        fired = (
+            fired or any(w is None for w in world.extras.weapons) and before != world.extras.weapons
+        )
+    assert fired

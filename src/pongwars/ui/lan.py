@@ -509,7 +509,9 @@ class LanHostMatchScreen(MatchScreen):
             fire = self._fire_tap or bool(pygame.key.get_pressed()[FIRE_KEYS[0]])
             self._fire_tap = False
             return self.local.poll(), fire
-        return self._bot(seat).poll(), False
+        bot = self._bot(seat)
+        move = bot.poll()
+        return move, bot.fire_intent()
 
     def _step(self) -> None:
         events = self.host.step(self._local_input)
