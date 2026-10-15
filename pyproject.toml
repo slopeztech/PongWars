@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pongwars"
+version = "0.1.0"
+license = "MIT"
+license-files = ["LICENSE"]
+description = "PongWars: 8-bit pseudo-3D Pong with arenas, extras, AI and LAN play"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pygame-ce>=2.5"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-cov>=5",
+  "hypothesis>=6.100",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[project.scripts]
+pongwars = "pongwars.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pongwars"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["slow: slow tests (benchmarks, long simulations)"]
+
+[tool.coverage.run]
+source = ["pongwars"]
+branch = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "D"]
+# Doxygen commands (@package/@brief) replace the pydocstyle summary-line layout.
+ignore = ["D205", "D415", "D212", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["pongwars.domain.*", "pongwars.ai.*", "pongwars.net.*", "pongwars.core.*"]
+strict = true

@@ -1,0 +1,11 @@
+id = "crossfire"
+theme = "stone"
+players = 4
+mirror = "xy"
+
+[[obstacles]]
+kind = "solid"
+x = 50
+y = 25
+half_w = 3
+half_h = 3

@@ -1,0 +1,11 @@
+id = "fortress"
+theme = "castle"
+mirror = "xy"
+
+[[obstacles]]
+kind = "destructible"
+x = 24
+y = 30
+half_w = 2
+half_h = 8
+hp = 3

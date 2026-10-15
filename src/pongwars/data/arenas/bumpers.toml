@@ -1,0 +1,17 @@
+id = "bumpers"
+theme = "arcade"
+mirror = "xy"
+
+[[obstacles]]
+kind = "bumper"
+x = 80
+y = 45
+half_w = 3
+half_h = 3
+
+[[obstacles]]
+kind = "bumper"
+x = 55
+y = 20
+half_w = 3
+half_h = 3

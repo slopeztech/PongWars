@@ -1,0 +1,27 @@
+PROJECT_NAME           = "PongWars"
+PROJECT_BRIEF          = "8-bit pseudo-3D Pong with arenas, extras, AI and LAN play"
+OUTPUT_DIRECTORY       = docs
+INPUT                  = src README.md docs/architecture.md docs/user-guide.md
+FILE_PATTERNS          = *.py *.md
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */__pycache__/* */data/*
+USE_MDFILE_AS_MAINPAGE = README.md
+
+OPTIMIZE_OUTPUT_JAVA   = YES
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+PYTHON_DOCSTRING       = YES
+AUTOLINK_SUPPORT       = YES
+MARKDOWN_SUPPORT       = YES
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HTML_OUTPUT            = html
+SOURCE_BROWSER         = YES
+HAVE_DOT               = NO
+
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_LOGFILE           = docs/doxygen_warnings.log

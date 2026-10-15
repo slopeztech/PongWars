@@ -1,0 +1,11 @@
+id = "trident"
+theme = "stone"
+players = 3
+mirror = "x"
+
+[[obstacles]]
+kind = "solid"
+x = 50
+y = 60
+half_w = 3
+half_h = 4

@@ -1,0 +1,42 @@
+"""@package pongwars.render.palette
+@brief Fixed 16-colour 8-bit palette.
+"""
+
+Color = tuple[int, int, int]
+
+BLACK: Color = (0, 0, 0)
+NAVY: Color = (29, 43, 83)
+PURPLE: Color = (126, 37, 83)
+GREEN: Color = (0, 135, 81)
+BROWN: Color = (171, 82, 54)
+DARK_GREY: Color = (95, 87, 79)
+LIGHT_GREY: Color = (194, 195, 199)
+WHITE: Color = (255, 241, 232)
+RED: Color = (255, 0, 77)
+ORANGE: Color = (255, 163, 0)
+YELLOW: Color = (255, 236, 39)
+LIME: Color = (0, 228, 54)
+BLUE: Color = (41, 173, 255)
+LAVENDER: Color = (131, 118, 156)
+PINK: Color = (255, 119, 168)
+PEACH: Color = (255, 204, 170)
+
+PLAYER_COLORS: tuple[Color, ...] = (BLUE, RED, LIME, YELLOW)
+THEMES: dict[str, tuple[Color, Color, Color]] = {
+    "stone": (NAVY, DARK_GREY, LIGHT_GREY),
+    "default": (NAVY, DARK_GREY, LIGHT_GREY),
+}
+
+
+def shade(color: Color, factor: float) -> Color:
+    """@brief Scale a colour's brightness.
+    @param color Source colour.
+    @param factor Multiplier (below 1 darkens).
+    @return The shaded colour, clamped to 0..255.
+    """
+    r, g, b = color
+    return (
+        max(0, min(255, int(r * factor))),
+        max(0, min(255, int(g * factor))),
+        max(0, min(255, int(b * factor))),
+    )

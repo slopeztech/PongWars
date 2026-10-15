@@ -1,0 +1,135 @@
+# Synthesized sound effects and the event -> sound mapping.
+# wave: square | triangle | noise. Pitch slides from `from` to `to` (Hz).
+
+[events]
+Served = "serve"
+PaddleHit = "paddle"
+WallHit = "wall"
+BumperHit = "bumper"
+Goal = "goal"
+PlayerEliminated = "eliminated"
+MatchEnded = "win"
+ObstacleDestroyed = "break"
+PickupSpawned = "spawn"
+PickupCollected = "pickup"
+EffectApplied = "effect"
+LaserFired = "laser"
+WeaponEmpty = "empty"
+ShieldUsed = "shield"
+BombDetonated = "bomb"
+SuddenDeath = "alarm"
+
+[sounds.serve]
+wave = "triangle"
+from = 330
+to = 440
+duration = 0.12
+
+[sounds.menu]
+wave = "triangle"
+from = 660
+to = 660
+duration = 0.03
+
+[sounds.paddle]
+wave = "square"
+from = 440
+to = 440
+duration = 0.06
+
+[sounds.wall]
+wave = "square"
+from = 220
+to = 220
+duration = 0.05
+volume = 0.35
+
+[sounds.bumper]
+wave = "square"
+from = 600
+to = 900
+duration = 0.08
+
+[sounds.goal]
+wave = "square"
+from = 600
+to = 120
+duration = 0.35
+
+[sounds.eliminated]
+wave = "noise"
+from = 0
+to = 0
+duration = 0.4
+
+[sounds.win]
+wave = "square"
+from = 440
+to = 880
+duration = 0.6
+
+[sounds.break]
+wave = "noise"
+from = 0
+to = 0
+duration = 0.12
+volume = 0.4
+
+[sounds.spawn]
+wave = "triangle"
+from = 700
+to = 700
+duration = 0.07
+volume = 0.3
+
+[sounds.pickup]
+wave = "square"
+from = 500
+to = 1000
+duration = 0.15
+
+[sounds.effect]
+wave = "triangle"
+from = 300
+to = 600
+duration = 0.12
+volume = 0.35
+
+[sounds.laser]
+wave = "square"
+from = 1400
+to = 300
+duration = 0.15
+
+[sounds.empty]
+wave = "square"
+from = 150
+to = 150
+duration = 0.08
+volume = 0.3
+
+[sounds.shield]
+wave = "triangle"
+from = 800
+to = 200
+duration = 0.2
+
+[sounds.bomb]
+wave = "noise"
+from = 0
+to = 0
+duration = 0.5
+
+[sounds.alarm]
+wave = "square"
+from = 800
+to = 400
+duration = 0.3
+volume = 0.4
+
+# Looping background phrase: semitones from A4 per step, -99 marks a rest.
+[music]
+step_seconds = 0.22
+wave = "triangle"
+volume = 0.35
+notes = [-12, -99, -5, -99, -12, -99, -3, -99, -10, -99, -3, -99, -10, -99, -1, -99]

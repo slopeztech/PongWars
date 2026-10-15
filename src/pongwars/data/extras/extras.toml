@@ -1,0 +1,81 @@
+# Effect balance data. `duration` is in seconds, `weight` is the spawn rarity weight
+# (0 = never spawns, used for internal status effects) and `ammo` is for weapons.
+
+[big_paddle]
+category = "power"
+duration = 10.0
+magnitude = 1.5
+weight = 4
+
+[speed_boost]
+category = "power"
+duration = 8.0
+magnitude = 1.5
+weight = 4
+
+[magnet]
+category = "power"
+duration = 12.0
+weight = 3
+
+[shield]
+category = "power"
+duration = 20.0
+weight = 3
+
+[multiball]
+category = "power"
+weight = 2
+
+[slow_mo]
+category = "power"
+duration = 6.0
+magnitude = 0.6
+weight = 3
+
+[laser]
+category = "weapon"
+ammo = 3
+weight = 3
+
+[freeze]
+category = "weapon"
+ammo = 2
+weight = 2
+
+[bomb]
+category = "weapon"
+ammo = 2
+weight = 2
+
+[small_paddle]
+category = "penalty"
+duration = 8.0
+magnitude = 0.6
+weight = 3
+
+[inverted]
+category = "penalty"
+duration = 6.0
+weight = 3
+
+[slow_paddle]
+category = "penalty"
+duration = 6.0
+magnitude = 0.6
+weight = 3
+
+[blind]
+category = "penalty"
+duration = 6.0
+weight = 2
+
+[stun]
+category = "status"
+duration = 1.5
+weight = 0
+
+[frozen]
+category = "status"
+duration = 2.0
+weight = 0

@@ -1,0 +1,10 @@
+id = "pillars"
+theme = "stone"
+mirror = "xy"
+
+[[obstacles]]
+kind = "solid"
+x = 60
+y = 25
+half_w = 3
+half_h = 5

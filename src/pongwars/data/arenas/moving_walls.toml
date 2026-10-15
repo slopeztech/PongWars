@@ -1,0 +1,12 @@
+id = "moving_walls"
+theme = "factory"
+mirror = "x"
+
+[[obstacles]]
+kind = "solid"
+x = 60
+y = 45
+half_w = 2
+half_h = 10
+patrol_y = 20
+period = 360
