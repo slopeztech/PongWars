@@ -3,10 +3,13 @@
 """
 
 import logging
+import os
 import random
+import sys
 import threading
 from array import array
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Protocol
 
@@ -99,6 +102,28 @@ class Library:
         return [sid for sid, song in self.songs.items() if context in song.contexts]
 
 
+def _lower_priority() -> None:
+    """@brief Worker initializer: keep the renderer from competing with the game loop."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            kernel = ctypes.windll.kernel32
+            kernel.SetPriorityClass(kernel.GetCurrentProcess(), 0x4000)  # BELOW_NORMAL
+        else:
+            os.nice(10)
+    except (OSError, AttributeError):
+        pass
+
+
+def _render_in_worker(song: Song) -> bytes:
+    """@brief Render a song inside the worker process.
+    @param song Song to render.
+    @return Raw 16-bit PCM bytes.
+    """
+    return render_song(song).tobytes()
+
+
 class Jukebox:
     """@brief Plays random songs of a context with a silent gap between them, forever."""
 
@@ -124,6 +149,9 @@ class Jukebox:
         self._gap_range = gap
         self._cache: dict[str, array[int]] = {}
         self._lock = threading.Lock()
+        self._pool: ProcessPoolExecutor | None = None
+        self._pool_ok = True
+        self._closed = False
         self._pending: set[str] = set()
         self._rng = random.Random()  # noqa: S311 - not security related
         self._context = ""
@@ -164,6 +192,17 @@ class Jukebox:
         self._ids = []
         self._gap = 0.0
 
+    def close(self) -> None:
+        """@brief Stop playback and kill the render process so exit is immediate."""
+        self.stop()
+        self._closed = True
+        pool, self._pool = self._pool, None
+        if pool is not None:
+            procs = list(getattr(pool, "_processes", {}).values())
+            pool.shutdown(wait=False, cancel_futures=True)
+            for proc in procs:
+                proc.terminate()
+
     def update(self, dt: float = 0.0) -> None:
         """@brief Call every frame: handle the gap and start the next song.
         @param dt Seconds since the previous call.
@@ -199,6 +238,14 @@ class Jukebox:
     def _play(self, song_id: str) -> None:
         self.current, self._waiting = song_id, ""
         self.sink.start(self._cache[song_id])
+        self._evict()
+
+    def _evict(self) -> None:
+        """@brief Drop rendered songs that are neither playing nor queued (bounds memory)."""
+        keep = {self.current, self._waiting, self._next}
+        with self._lock:
+            for sid in [sid for sid in self._cache if sid not in keep]:
+                del self._cache[sid]
 
     def _request(self, song_id: str) -> None:
         with self._lock:
@@ -211,7 +258,32 @@ class Jukebox:
             self._render(song_id)
 
     def _render(self, song_id: str) -> None:
-        samples = self._renderer(self.library.songs[song_id])
+        song = self.library.songs[song_id]
+        samples: array[int] | None = None
+        if self._threaded and self._pool_ok and self._renderer is render_song:
+            samples = self._render_in_process(song)
+        if samples is None:
+            samples = self._renderer(song)
         with self._lock:
             self._cache[song_id] = samples
             self._pending.discard(song_id)
+
+    def _render_in_process(self, song: Song) -> "array[int] | None":
+        """@brief Render in a worker process so the game loop never shares its GIL.
+        @param song Song to render.
+        @return PCM, or None when processes are unavailable (caller falls back to a thread).
+        """
+        try:
+            with self._lock:
+                if self._pool is None:
+                    self._pool = ProcessPoolExecutor(max_workers=1, initializer=_lower_priority)
+                pool = self._pool
+            data = pool.submit(_render_in_worker, song).result()
+        except Exception:  # noqa: BLE001 - any pool failure just disables the pool
+            if not self._closed:
+                logging.getLogger(__name__).warning("Render process unavailable, using a thread")
+            self._pool_ok = False
+            return None
+        samples = array("h")
+        samples.frombytes(data)
+        return samples

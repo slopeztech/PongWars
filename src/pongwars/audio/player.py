@@ -159,6 +159,11 @@ class AudioPlayer:
         if self.jukebox is not None:
             self.jukebox.stop()
 
+    def close(self) -> None:
+        """@brief Release background resources (the render process)."""
+        if self.jukebox is not None:
+            self.jukebox.close()
+
     def now_playing(self) -> tuple[str, str] | None:
         """@brief Song currently audible.
         @return (title, artist), or None during silence or when music is off.

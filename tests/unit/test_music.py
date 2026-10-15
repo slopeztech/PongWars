@@ -176,3 +176,11 @@ def test_bundled_songs_are_valid() -> None:
     assert len(library.ids_for("match")) >= 20
     for song in library.songs.values():
         assert song.title and song.duration > 150
+
+
+def test_close_is_idempotent_and_clears_pool() -> None:
+    box, _, _ = make_jukebox()
+    box.start("menu")
+    box.close()
+    box.close()
+    assert box.context == ""

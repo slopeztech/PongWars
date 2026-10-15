@@ -82,6 +82,7 @@ class App:
                 pass
         finally:
             self.settings.save()
+            self.ctx.audio.close()
             pygame.quit()
 
 
