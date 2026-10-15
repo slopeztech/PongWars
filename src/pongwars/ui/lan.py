@@ -564,8 +564,7 @@ class LanClientMatchScreen(Screen):
         self.input = KeyboardInput(ctx.keymap.get(0), pygame.key.get_pressed)
         self.loop = FixedStepLoop(self._tick, c.DT)
         self._fire_tap = False
-        tracks = ctx.audio.bank.match_tracks
-        ctx.audio.start_music(tracks[client.config.seed % len(tracks)] if tracks else "menu")
+        ctx.audio.start_music("match", seed=client.config.seed)
 
     def _tick(self) -> None:
         fire = self._fire_tap or bool(pygame.key.get_pressed()[FIRE_KEYS[0]])

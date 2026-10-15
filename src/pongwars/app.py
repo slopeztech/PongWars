@@ -65,6 +65,7 @@ class App:
                 stack.pop_all()
             else:
                 stack.handle_event(event)
+        self.ctx.audio.update(dt)
         stack.update(dt)
         if stack.top is None:
             return False

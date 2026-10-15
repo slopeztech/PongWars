@@ -1,7 +1,7 @@
 PROJECT_NAME           = "PongWars"
 PROJECT_BRIEF          = "8-bit pseudo-3D Pong with arenas, extras, AI and LAN play"
 OUTPUT_DIRECTORY       = docs
-INPUT                  = src README.md docs/architecture.md docs/user-guide.md
+INPUT                  = src README.md docs/architecture.md docs/user-guide.md docs/music-format.md
 FILE_PATTERNS          = *.py *.md
 RECURSIVE              = YES
 EXCLUDE_PATTERNS       = */__pycache__/* */data/*

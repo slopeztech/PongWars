@@ -1,0 +1,57 @@
+# Midnight Cafe - generated style: jazz
+title = Midnight Cafe
+artist = Jazz Byte
+tempo = 88
+meter = 4/4
+volume = 0.9
+use = any
+
+instrument lead = triangle duty=0.5 volume=0.4 attack=0.02 decay=0.1 sustain=0.7 release=0.12 vibrato=0.25
+instrument pad = square duty=0.25 volume=0.17 attack=0.01 decay=0.1 sustain=0.5 release=0.08
+instrument bass = triangle volume=0.55 attack=0.01 sustain=0.8 release=0.05
+instrument kick = noise volume=0.5 attack=0.001 decay=0.08 sustain=0 release=0.01
+instrument snare = noise volume=0.3 attack=0.001 decay=0.06 sustain=0 release=0.01
+instrument hat = noise volume=0.12 attack=0.001 decay=0.02 sustain=0 release=0.005
+
+[section intro]
+lead: | R:1 | R:1 | R:1 | R:1 |
+pad: | G4:4 B4:4 D5:4 B4:4 | C5:4 E5:4 G5:4 E5:4 | D5:4 F#5:4 A5:4 F#5:4 | C5:4 E5:4 G5:4 E5:4 |
+bass: | G2:4 B2:4 D3:4 B2:4 | C3:4 E3:4 G3:4 E3:4 | D3:4 F#3:4 A3:4 F#3:4 | C3:4 E3:4 G3:4 E3:4 |
+kick: | R:1 | R:1 | R:1 | R:1 |
+snare: | R:1 | R:1 | R:1 | R:1 |
+hat: | R:1 | R:1 | R:1 | R:1 |
+
+[section a]
+lead: | G5:4. D5:8 D5:4 D5:4 | E5:2 D5:4 D5:4 | D5:4 F#5:8 E5:8 E5:4 G5:4 | G5:4. E5:8 D5:4 D5:4 | G5:4 F#5:4 D5:2 | D5:4 D5:8 D5:8 G5:4 G5:4 | A5:4 G5:4 R:2 | E5:4 D5:8 F#5:8 F#5:4 R:4 |
+pad: | G4:4 B4:4 D5:4 B4:4 | C5:4 E5:4 G5:4 E5:4 | D5:4 F#5:4 A5:4 F#5:4 | C5:4 E5:4 G5:4 E5:4 | G4:4 B4:4 D5:4 B4:4 | C5:4 E5:4 G5:4 E5:4 | D5:4 F#5:4 A5:4 F#5:4 | G4:4 B4:4 D5:4 B4:4 |
+bass: | G2:4 B2:4 D3:4 B2:4 | C3:4 E3:4 G3:4 E3:4 | D3:4 F#3:4 A3:4 F#3:4 | C3:4 E3:4 G3:4 E3:4 | G2:4 B2:4 D3:4 B2:4 | C3:4 E3:4 G3:4 E3:4 | D3:4 F#3:4 A3:4 F#3:4 | G2:4 B2:4 D3:4 B2:4 |
+kick: | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 |
+snare: | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 |
+hat: | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 |
+
+[section b]
+lead: | D6:4 R:8 D6:8 C6:4 R:4 | B5:4 G5:4 A5:4 D6:4 | E6:2 R:4 G6:4 | F#6:4 E6:8 F#6:8 B6:4 G6:4 | D6:2 D6:4 D6:4 | D6:4 A5:4 B5:2 | B5:4. F#5:8 D5:2 | D5:4 D5:4 D5:4 G5:4 |
+pad: | G4:4 B4:4 D5:4 B4:4 | B4:4 D5:4 F#5:4 D5:4 | E5:4 G5:4 B5:4 G5:4 | D5:4 F#5:4 A5:4 F#5:4 | G4:4 B4:4 D5:4 B4:4 | B4:4 D5:4 F#5:4 D5:4 | E5:4 G5:4 B5:4 G5:4 | G4:4 B4:4 D5:4 B4:4 |
+bass: | G2:4 B2:4 D3:4 B2:4 | B2:4 D3:4 F#3:4 D3:4 | E3:4 G3:4 B3:4 G3:4 | D3:4 F#3:4 A3:4 F#3:4 | G2:4 B2:4 D3:4 B2:4 | B2:4 D3:4 F#3:4 D3:4 | E3:4 G3:4 B3:4 G3:4 | G2:4 B2:4 D3:4 B2:4 |
+kick: | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 | X:8 R:8 R:8 R:8 R:8 R:8 X:8 R:8 |
+snare: | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 | R:8 R:8 R:8 R:8 X:8 R:8 R:8 R:8 |
+hat: | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 | X:8 R:8 X:8 R:8 X:8 R:8 X:8 R:8 |
+
+[section c]
+lead: | B5:2 A5:4 A5:4 | G5:4 A5:4 F#5:4 D5:4 | D5:4. R:8 E5:2 | F#5:4 G5:4 A5:4 A5:4 | B5:4. C6:8 E6:2 | E6:4. E6:8 F#6:4 G6:4 | G6:4 B6:4 B6:2 | A6:2 B6:4 B6:4 |
+pad: | E5:4 G5:4 B5:4 G5:4 | C5:4 E5:4 G5:4 E5:4 | G4:4 B4:4 D5:4 B4:4 | D5:4 F#5:4 A5:4 F#5:4 | E5:4 G5:4 B5:4 G5:4 | C5:4 E5:4 G5:4 E5:4 | G4:4 B4:4 D5:4 B4:4 | G4:4 B4:4 D5:4 B4:4 |
+bass: | E3:4 G3:4 B3:4 G3:4 | C3:4 E3:4 G3:4 E3:4 | G2:4 B2:4 D3:4 B2:4 | D3:4 F#3:4 A3:4 F#3:4 | E3:4 G3:4 B3:4 G3:4 | C3:4 E3:4 G3:4 E3:4 | G2:4 B2:4 D3:4 B2:4 | G2:4 B2:4 D3:4 B2:4 |
+kick: | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 |
+snare: | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 |
+hat: | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 | R:1 |
+
+[section end]
+lead: | G5:1 |
+pad: | G4:1 |
+bass: | G2:1 |
+kick: | R:1 |
+snare: | R:1 |
+hat: | R:1 |
+
+[arrangement]
+intro a*2 b a b c a*2 end

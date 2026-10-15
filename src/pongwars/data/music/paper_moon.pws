@@ -1,0 +1,39 @@
+# Paper Moon - generated style: dream waltz
+title = Paper Moon
+artist = Bit Bard
+tempo = 76
+meter = 3/4
+volume = 0.9
+use = menu
+
+instrument lead = triangle duty=0.5 volume=0.4 attack=0.02 decay=0.1 sustain=0.7 release=0.12 vibrato=0.3
+instrument pad = square duty=0.25 volume=0.17 attack=0.01 decay=0.1 sustain=0.5 release=0.08
+instrument bass = triangle volume=0.55 attack=0.01 sustain=0.8 release=0.05
+
+[section intro]
+lead: | R:2. | R:2. | R:2. | R:2. |
+pad: | G5:8 A#5:8 D6:8 A#5:8 G5:8 A#5:8 | D#5:8 G5:8 A#5:8 G5:8 D#5:8 G5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | F5:8 A5:8 C6:8 A5:8 F5:8 A5:8 |
+bass: | G3:2. | D#3:2. | A#2:2. | F3:2. |
+
+[section a]
+lead: | A#5:2. | A#5:2. | A#5:4 A5:2 | A5:4. R:8. G5:8. | D6:2 C6:4 | A#5:4. A5:8. A5:8. | A#5:4. D#6:8. D#6:8. | F6:2 G6:4 |
+pad: | G5:8 A#5:8 D6:8 A#5:8 G5:8 A#5:8 | D#5:8 G5:8 A#5:8 G5:8 D#5:8 G5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | F5:8 A5:8 C6:8 A5:8 F5:8 A5:8 | G5:8 A#5:8 D6:8 A#5:8 G5:8 A#5:8 | D#5:8 G5:8 A#5:8 G5:8 D#5:8 G5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 |
+bass: | G3:2. | D#3:2. | A#2:2. | F3:2. | G3:2. | D#3:2. | A#2:2. | A#2:2. |
+
+[section b]
+lead: | D6:2. | D6:4 A#5:2 | A#5:4. C6:4. | C6:2 A#5:4 | F6:4. C6:8. D#6:8. | D6:4 D6:2 | D#6:2. | F6:2. |
+pad: | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | G5:8 A#5:8 D6:8 A#5:8 G5:8 A#5:8 | D#5:8 G5:8 A#5:8 G5:8 D#5:8 G5:8 | F5:8 A5:8 C6:8 A5:8 F5:8 A5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | G5:8 A#5:8 D6:8 A#5:8 G5:8 A#5:8 | D#5:8 G5:8 A#5:8 G5:8 D#5:8 G5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 |
+bass: | A#2:2. | G3:2. | D#3:2. | F3:2. | A#2:2. | G3:2. | D#3:2. | A#2:2. |
+
+[section c]
+lead: | D6:4. G6:4. | G6:4 A6:2 | A6:4 D#6:2 | D#6:4. D6:8. D#6:8. | D6:2 A5:4 | A#5:2 A#5:4 | A5:4 A#5:2 | A#5:2. |
+pad: | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | D#5:8 G5:8 A#5:8 G5:8 D#5:8 G5:8 | F5:8 A5:8 C6:8 A5:8 F5:8 A5:8 | D#5:8 G5:8 A#5:8 G5:8 D#5:8 G5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | D#5:8 G5:8 A#5:8 G5:8 D#5:8 G5:8 | F5:8 A5:8 C6:8 A5:8 F5:8 A5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 |
+bass: | A#2:2. | D#3:2. | F3:2. | D#3:2. | A#2:2. | D#3:2. | F3:2. | A#2:2. |
+
+[section end]
+lead: | A#5:2. |
+pad: | A#4:2. |
+bass: | A#2:2. |
+
+[arrangement]
+intro a*2 b a b c a*2 b end

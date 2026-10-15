@@ -64,6 +64,7 @@
 - [x] 7.3 Persistent settings incl. language selector
 - [x] 7.4 Chiptune synthesizer and event-to-sound mapping
 - [x] 7.5 Bitmap font charset per language
+- [x] 7.6 Music engine: `.pws` song format, sequencer and jukebox that chains songs in menus and matches
 
 ## 8. Phase 7 - LAN (`lan-multiplayer`)
 

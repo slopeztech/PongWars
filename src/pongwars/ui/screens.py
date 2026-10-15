@@ -177,6 +177,21 @@ class MainMenuScreen(MenuScreen):
         )
         ctx.audio.start_music()
 
+    def draw(self, surface: pygame.Surface) -> None:
+        """@brief Draw the menu plus the song that is playing.
+        @param surface Low-resolution target.
+        """
+        super().draw(surface)
+        playing = self.ctx.audio.now_playing()
+        if playing is not None:
+            title, artist = playing
+            _centered(
+                surface,
+                self.ctx.t("music.now_playing", title=title, artist=artist),
+                154,
+                pal.LIGHT_GREY,
+            )
+
     def open_lan_host(self) -> None:
         """@brief Open the LAN host setup."""
         self.ctx.stack.push(SetupScreen(self.ctx, ("human", "remote"), lan=True))
@@ -450,14 +465,10 @@ class MatchScreen(Screen):
         self._fire_taps = [False] * self.world.players
         self.loop = FixedStepLoop(self._step, c.DT)
         self.paused = False
-        ctx.audio.start_music(self._pick_track(config.seed))
-
-    def _pick_track(self, seed: int) -> str:
-        tracks = self.ctx.audio.bank.match_tracks
-        choice = self.ctx.settings.music_track
-        if choice in tracks:
-            return choice
-        return tracks[seed % len(tracks)] if tracks else "menu"
+        choice = ctx.settings.music_track
+        ctx.audio.start_music(
+            "match", first=None if choice == "random" else choice, seed=config.seed
+        )
 
     def _controller(self, seat: int) -> PlayerInput:
         config, world = self.config, self.world
@@ -501,7 +512,7 @@ class MatchScreen(Screen):
         self.loop.advance(dt)
         self.renderer.update(self.world, dt)
         if self.world.phase is Phase.FINISHED:
-            self.ctx.audio.stop_music()
+            self.ctx.audio.start_music("menu")
             self.ctx.stack.replace(ResultsScreen(self.ctx, self.config, self.world, self.view))
 
     def draw(self, surface: pygame.Surface) -> None:
@@ -535,7 +546,7 @@ class PauseScreen(MenuScreen):
         self.ctx.stack.push(SettingsScreen(self.ctx))
 
     def _quit(self) -> None:
-        self.ctx.audio.stop_music()
+        self.ctx.audio.start_music("menu")
         self.ctx.stack.pop_to(MainMenuScreen)
 
     def draw(self, surface: pygame.Surface) -> None:
@@ -820,7 +831,7 @@ class AppearanceScreen(MenuScreen):
         items.append(
             MenuItem(
                 lambda: t("appearance.track"),
-                lambda: t(f"track.{s.music_track}"),
+                lambda: self._track_label(s.music_track),
                 on_adjust=self._track,
             )
         )
@@ -835,15 +846,20 @@ class AppearanceScreen(MenuScreen):
         s.background = cycle(BACKGROUNDS, s.background, step)
         s.save()
 
+    def _track_label(self, choice: str) -> str:
+        if choice == "random" or choice not in self.ctx.audio.song_ids("match"):
+            return self.ctx.t("track.random")
+        return self.ctx.audio.song_title(choice)
+
     def _track(self, step: int) -> None:
         s = self.ctx.settings
-        choices = ["random", *self.ctx.audio.bank.match_tracks]
+        choices = ["random", *self.ctx.audio.song_ids("match")]
         s.music_track = cycle(choices, s.music_track, step)
         s.save()
         if s.music_track != "random":
-            self.ctx.audio.start_music(s.music_track)
+            self.ctx.audio.start_music("match", first=s.music_track)
         else:
-            self.ctx.audio.start_music()
+            self.ctx.audio.start_music("menu")
 
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Draw the rows and a live paddle preview.

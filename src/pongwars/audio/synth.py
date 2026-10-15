@@ -70,28 +70,3 @@ def note_frequency(semitones_from_a4: float) -> float:
     @return Frequency in Hz.
     """
     return 440.0 * math.pow(2.0, semitones_from_a4 / 12.0)
-
-
-def render_melody(
-    notes: tuple[int | None, ...],
-    step_seconds: float,
-    wave: str = "triangle",
-    volume: float = 0.4,
-    sample_rate: int = SAMPLE_RATE,
-) -> "array[int]":
-    """@brief Concatenate equal-length notes into a loopable phrase.
-    @param notes Semitones from A4 per step; None is a rest.
-    @param step_seconds Length of each step.
-    @param wave Waveform for every note.
-    @param volume Relative level.
-    @param sample_rate Samples per second.
-    @return Signed 16-bit mono samples.
-    """
-    out = array("h")
-    for note in notes:
-        if note is None:
-            out.extend(array("h", [0] * max(1, int(step_seconds * sample_rate))))
-        else:
-            freq = note_frequency(note)
-            out.extend(render_tone(ToneSpec(wave, freq, freq, step_seconds, volume), sample_rate))
-    return out

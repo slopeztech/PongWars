@@ -82,8 +82,9 @@ Keys can be rebound in **Settings** (two keys per seat). A key already in use is
 ## Appearance and music
 
 **Appearance** in the main menu lets each seat pick a paddle colour (8) and style (4), the
-animated arena background (none, grid, stars, rain, waves, aurora) and the music track
-(random or one of arcade, chase, hero, dusk, boss). A live preview is shown.
+animated arena background (none, grid, stars, rain, waves, aurora) and the match music
+(random or one of the bundled songs). A live preview is shown.
+Songs play in random order (never the same one twice in a row) in the menus and during matches, with 2-3 seconds of silence between them. The main menu shows the current song and its author.
 **How to play** is an in-game guide (6 pages: goal, controls, modes, powers, weapons,
 penalties); use Left/Right to turn pages.
 
@@ -106,6 +107,8 @@ particles, ball trail, screen shake and the camera for 3-4 player arenas
   and set `language.name`; it appears in Settings automatically.
 - **Arena**: add a TOML file in `src/pongwars/data/arenas/`.
 - **Sounds**: edit `src/pongwars/data/audio/sounds.toml`.
+- **Songs**: drop a `.pws` file in `src/pongwars/data/music/` (format in
+  [music-format.md](music-format.md)).
 
 ## LAN play
 

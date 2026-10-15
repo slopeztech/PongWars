@@ -11,7 +11,7 @@ import pygame
 import pytest
 
 from pongwars.audio.player import AudioPlayer, load_bank
-from pongwars.audio.synth import ToneSpec, note_frequency, render_melody, render_tone
+from pongwars.audio.synth import ToneSpec, note_frequency, render_tone
 from pongwars.core.i18n import Translator, available_languages, load_catalog
 from pongwars.core.settings import Settings
 from pongwars.domain.arenas import arena_names
@@ -102,20 +102,15 @@ def test_render_tone_bounds_and_errors() -> None:
         render_tone(ToneSpec("square", 440, 440, 0))
 
 
-def test_melody_and_notes() -> None:
+def test_notes() -> None:
     assert note_frequency(0) == pytest.approx(440.0)
     assert note_frequency(12) == pytest.approx(880.0)
-    melody = render_melody((0, None, 7), 0.05, "square", 0.3)
-    assert len(melody) == 3 * int(0.05 * 22050)
 
 
 def test_bank_maps_every_event_to_a_sound() -> None:
     bank = load_bank()
     assert "Goal" in bank.events
     assert set(bank.events.values()) <= set(bank.sounds)
-    assert bank.match_tracks
-    assert "menu" in bank.tracks and "menu" not in bank.match_tracks
-    assert all(track.notes for track in bank.tracks.values())
 
 
 def test_player_plays_and_handles_events(ctx: AppContext) -> None:
@@ -126,8 +121,9 @@ def test_player_plays_and_handles_events(ctx: AppContext) -> None:
     assert not audio.play("does_not_exist")
     assert audio.handle_events([Goal(scorer=0, conceded=1)]) == 1
     audio.start_music()
-    audio.start_music(audio.bank.match_tracks[0])
-    audio.start_music("no_such_track")
+    audio.start_music("match", first=audio.song_ids("match")[0])
+    audio.start_music("match", first="no_such_track")
+    audio.update()
     audio.set_volumes(0, 0, 0)
     audio.stop_music()
 

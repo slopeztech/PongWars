@@ -11,10 +11,10 @@ from typing import Any
 
 import pygame
 
+from pongwars.audio.jukebox import Jukebox, Library, PygameSink
 from pongwars.audio.synth import (
     SAMPLE_RATE,
     ToneSpec,
-    render_melody,
     render_tone,
 )
 from pongwars.domain.events import Event
@@ -22,46 +22,19 @@ from pongwars.domain.events import Event
 logger = logging.getLogger(__name__)
 
 SOUNDS_FILE = Path(__file__).resolve().parent.parent / "data" / "audio" / "sounds.toml"
-REST = -99
 VOLUME_SCALE = 100.0
 
 
 @dataclass(frozen=True)
-class Track:
-    """@brief A looping background track.
-
-    @param notes Semitones per step (None is a rest).
-    @param step Seconds per step.
-    @param wave Waveform.
-    @param volume Relative level.
-    """
-
-    notes: tuple[int | None, ...]
-    step: float
-    wave: str
-    volume: float
-
-
-MENU_TRACK = "menu"
-
-
-@dataclass(frozen=True)
 class SoundBank:
-    """@brief Parsed audio data.
+    """@brief Parsed sound-effect data.
 
     @param events Event class name -> sound name.
     @param sounds Sound name -> tone description.
-    @param tracks Track name -> background track.
     """
 
     events: dict[str, str]
     sounds: dict[str, ToneSpec]
-    tracks: dict[str, Track]
-
-    @property
-    def match_tracks(self) -> list[str]:
-        """@brief Names of the tracks that can play during a match, sorted."""
-        return sorted(name for name in self.tracks if name != MENU_TRACK)
 
 
 def load_bank(path: Path = SOUNDS_FILE) -> SoundBank:
@@ -85,16 +58,7 @@ def load_bank(path: Path = SOUNDS_FILE) -> SoundBank:
     for event, sound in events.items():
         if sound not in sounds:
             raise ValueError(f"event {event} maps to unknown sound {sound}")
-    tracks = {
-        name: Track(
-            tuple(None if int(n) == REST else int(n) for n in raw["notes"]),
-            float(raw["step_seconds"]),
-            str(raw["wave"]),
-            float(raw["volume"]),
-        )
-        for name, raw in data["music"].items()
-    }
-    return SoundBank(events, sounds, tracks)
+    return SoundBank(events, sounds)
 
 
 class AudioPlayer:
@@ -104,13 +68,19 @@ class AudioPlayer:
     """
 
     def __init__(
-        self, master: int = 80, music: int = 60, sfx: int = 100, bank: SoundBank | None = None
+        self,
+        master: int = 80,
+        music: int = 60,
+        sfx: int = 100,
+        bank: SoundBank | None = None,
+        library: Library | None = None,
     ) -> None:
         """@brief Create the player and try to open the mixer.
         @param master Master volume 0-100.
         @param music Music volume 0-100.
         @param sfx Effects volume 0-100.
         @param bank Sound definitions (the built-in bank when omitted).
+        @param library Songs (the bundled `.pws` files when omitted).
         """
         self.bank = bank or load_bank()
         self.master = master
@@ -118,9 +88,9 @@ class AudioPlayer:
         self.sfx = sfx
         self.enabled = self._open_mixer()
         self._sounds: dict[str, pygame.mixer.Sound] = {}
-        self._music_sounds: dict[str, pygame.mixer.Sound] = {}
-        self._current_track = ""
-        self._music_channel: pygame.mixer.Channel | None = None
+        self.library = library or Library.load()
+        self.jukebox: Jukebox | None = Jukebox(self.library, PygameSink()) if self.enabled else None
+        self._apply_music_volume()
 
     @staticmethod
     def _open_mixer() -> bool:
@@ -142,8 +112,8 @@ class AudioPlayer:
         self._apply_music_volume()
 
     def _apply_music_volume(self) -> None:
-        if self._music_channel is not None:
-            self._music_channel.set_volume(self.master / VOLUME_SCALE * self.music / VOLUME_SCALE)
+        if self.jukebox is not None:
+            self.jukebox.sink.set_volume(self.master / VOLUME_SCALE * self.music / VOLUME_SCALE)
 
     def _sound(self, name: str) -> "pygame.mixer.Sound":
         if name not in self._sounds:
@@ -175,29 +145,47 @@ class AudioPlayer:
                 started += 1
         return started
 
-    def start_music(self, track: str = MENU_TRACK) -> None:
-        """@brief Loop a background track (no-op when silent or that track is already playing).
-        @param track Track name from the bank; an unknown name falls back to the menu track.
+    def start_music(self, context: str = "menu", first: str | None = None, seed: int = 0) -> None:
+        """@brief Play the songs of a context back to back (no-op if already playing it).
+        @param context `menu` or `match`.
+        @param first Song id to start with (an unknown id is ignored).
+        @param seed Shuffle seed for the rest of the playlist.
         """
-        if track not in self.bank.tracks:
-            track = MENU_TRACK
-        if not self.enabled:
-            return
-        if self._music_channel and self._music_channel.get_busy():
-            if track == self._current_track:
-                return
-            self._music_channel.stop()
-        if track not in self._music_sounds:
-            spec = self.bank.tracks[track]
-            samples = render_melody(spec.notes, spec.step, spec.wave, spec.volume)
-            self._music_sounds[track] = pygame.mixer.Sound(buffer=samples.tobytes())
-        self._current_track = track
-        self._music_channel = self._music_sounds[track].play(loops=-1)
-        self._apply_music_volume()
+        if self.jukebox is not None:
+            self.jukebox.start(context, first, seed)
 
     def stop_music(self) -> None:
-        """@brief Stop the background loop."""
-        if self._music_channel is not None:
-            self._music_channel.stop()
-        self._music_channel = None
-        self._current_track = ""
+        """@brief Stop the background music."""
+        if self.jukebox is not None:
+            self.jukebox.stop()
+
+    def now_playing(self) -> tuple[str, str] | None:
+        """@brief Song currently audible.
+        @return (title, artist), or None during silence or when music is off.
+        """
+        if self.jukebox is None or not self.jukebox.current:
+            return None
+        song = self.library.songs.get(self.jukebox.current)
+        return (song.title, song.artist) if song else None
+
+    def update(self, dt: float = 0.0) -> None:
+        """@brief Call once per frame so the next song starts after the gap.
+        @param dt Seconds since the previous frame.
+        """
+        if self.jukebox is not None:
+            self.jukebox.update(dt)
+
+    def song_ids(self, context: str = "match") -> list[str]:
+        """@brief Ids of the songs available in a context.
+        @param context `menu` or `match`.
+        @return Sorted song ids.
+        """
+        return self.library.ids_for(context)
+
+    def song_title(self, song_id: str) -> str:
+        """@brief Display title of a song.
+        @param song_id Song id.
+        @return The title, or the id when unknown.
+        """
+        song = self.library.songs.get(song_id)
+        return song.title if song else song_id

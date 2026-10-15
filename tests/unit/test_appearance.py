@@ -1,6 +1,7 @@
 """Tests for appearance: backgrounds, paddle skins, cats, settings and music choice."""
 
 import os
+from array import array
 from pathlib import Path
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -19,7 +20,7 @@ from pongwars.domain.world import FrameInputs, World
 from pongwars.render.backgrounds import draw_background
 from pongwars.render.renderer import Renderer, RenderSettings
 from pongwars.ui.core import AppContext
-from pongwars.ui.screens import AppearanceScreen, HowToPlayScreen, MatchScreen
+from pongwars.ui.screens import AppearanceScreen, HowToPlayScreen, MainMenuScreen, MatchScreen
 
 
 def key(code: int) -> pygame.event.Event:
@@ -121,9 +122,30 @@ def test_how_to_play_pages(ctx: AppContext) -> None:
     assert ctx.stack.top is None
 
 
-def test_match_picks_chosen_and_random_tracks(ctx: AppContext) -> None:
-    ctx.settings.music_track = ctx.audio.bank.match_tracks[0]
-    match = MatchScreen(ctx, MatchConfig(seed=1))
-    assert match._pick_track(1) == ctx.settings.music_track
+def test_match_music_follows_the_setting(ctx: AppContext) -> None:
+    assert ctx.audio.jukebox is not None
+    ctx.audio.jukebox._threaded = False
+    ctx.audio.jukebox._renderer = lambda _song: array("h", [0] * 8)
+    first = ctx.audio.song_ids("match")[0]
+    ctx.settings.music_track = first
+    MatchScreen(ctx, MatchConfig(seed=1))
+    assert ctx.audio.jukebox.context == "match"
+    assert ctx.audio.jukebox.current == first
     ctx.settings.music_track = "random"
-    assert match._pick_track(5) in ctx.audio.bank.match_tracks
+    MatchScreen(ctx, MatchConfig(seed=5))
+    assert ctx.audio.jukebox.current in ctx.audio.song_ids("match")
+
+
+def test_main_menu_shows_now_playing(ctx: AppContext) -> None:
+    assert ctx.audio.jukebox is not None
+    ctx.audio.jukebox._threaded = False
+    ctx.audio.jukebox._renderer = lambda _song: array("h", [0] * 8)
+    song_id = ctx.audio.song_ids("menu")[0]
+    ctx.audio.start_music("menu", first=song_id)
+    assert ctx.audio.now_playing() is not None
+    surface = pygame.Surface((320, 180))
+    screen = MainMenuScreen(ctx)
+    screen.draw(surface)
+    ctx.audio.jukebox.current = ""
+    assert ctx.audio.now_playing() is None
+    screen.draw(surface)

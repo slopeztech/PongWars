@@ -45,7 +45,8 @@ app -> ui -> render / input / audio / net -> domain <- ai
 
 ## Players and rendering
 
-Arenas support 2, 3 or 4 players (seats: left, right, top, bottom); absent seats are walls. The pseudo-3D view is a pitched pinhole camera (ender/camera.py) drawing onto a 320x180 surface scaled up; input lives in input/controllers.py and the loop in core/loop.py.
+Arenas support 2, 3 or 4 players (seats: left, right, top, bottom); absent seats are walls. The pseudo-3D view is a pitched pinhole camera (
+ender/camera.py) drawing onto a 320x180 surface scaled up; input lives in input/controllers.py and the loop in core/loop.py.
 
 ## Extras
 
@@ -53,8 +54,8 @@ Powers, weapons, penalties and statuses are Effect subclasses registered in doma
 
 ## UI, audio and settings
 
-The ui package is a stack of screens (title, menus, setup with arena preview, match, pause overlay, results, settings) driven by pp.App. All text goes through the Translator; the bitmap font exposes 
-ormalize for unsupported characters. udio synthesizes chiptune sounds from data/audio/sounds.toml (event class name to sound) and falls back to silence without a device. core.settings.Settings persists user preferences as JSON in the user config directory.
+
+The ui package is a stack of screens (title, menus, setup with arena preview, match, pause overlay, results, settings) driven by `pongwars.app.App`. All text goes through the `Translator`; the bitmap font exposes `normalize` for unsupported characters. The `audio` package synthesizes sound effects from `data/audio/sounds.toml` and music from `.pws` song files (see [music-format.md](music-format.md)): `songfile` parses them, `sequencer` renders them to PCM and `jukebox` plays random songs per context with a 2-3 s gap. Audio falls back to silence without a device. `core.settings.Settings` persists user preferences as JSON in the user config directory.
 
 
 ## LAN (net package)

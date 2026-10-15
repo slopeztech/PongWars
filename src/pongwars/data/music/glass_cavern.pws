@@ -1,0 +1,39 @@
+# Glass Cavern - generated style: mystery
+title = Glass Cavern
+artist = Nova Nibble
+tempo = 68
+meter = 6/8
+volume = 0.9
+use = any
+
+instrument lead = square duty=0.125 volume=0.4 attack=0.02 decay=0.1 sustain=0.7 release=0.12 vibrato=0.3
+instrument pad = square duty=0.25 volume=0.17 attack=0.01 decay=0.1 sustain=0.5 release=0.08
+instrument bass = triangle volume=0.55 attack=0.01 sustain=0.8 release=0.05
+
+[section intro]
+lead: | R:2. | R:2. | R:2. | R:2. |
+pad: | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 | C5:8 E5:8 G5:8 E5:8 C5:8 E5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | C5:8 E5:8 G5:8 E5:8 C5:8 E5:8 |
+bass: | D2:2. | C3:2. | A#2:2. | C3:2. |
+
+[section a]
+lead: | D5:8. E5:4. A5:8. | G5:4. C6:4. | D6:8. C6:4. D6:8. | C6:2. | D5:4. C5:4. | C5:4. A4:4. | A#4:2. | C5:4. A#4:8. C5:8. |
+pad: | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 | C5:8 E5:8 G5:8 E5:8 C5:8 E5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | C5:8 E5:8 G5:8 E5:8 C5:8 E5:8 | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 | C5:8 E5:8 G5:8 E5:8 C5:8 E5:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 |
+bass: | D2:2. | C3:2. | A#2:2. | C3:2. | D2:2. | C3:2. | A#2:2. | D2:2. |
+
+[section b]
+lead: | A5:2. | A#5:4. A5:8. E5:8. | D5:4. E5:4. | E5:8. E5:4. F5:8. | A5:4. A#5:4. | A#5:4. C6:4. | A#5:4. G5:8. D5:8. | C5:4. R:8. A#4:8. |
+pad: | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | G4:8 A#4:8 D5:8 A#4:8 G4:8 A#4:8 | A4:8 C5:8 E5:8 C5:8 A4:8 C5:8 | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 | A#4:8 D5:8 F5:8 D5:8 A#4:8 D5:8 | G4:8 A#4:8 D5:8 A#4:8 G4:8 A#4:8 | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 |
+bass: | D2:2. | A#2:2. | G2:2. | A2:2. | D2:2. | A#2:2. | G2:2. | D2:2. |
+
+[section c]
+lead: | D5:4. C5:8. C5:8. | A#4:4. D5:8. C5:8. | C5:8. D5:4. C5:8. | D5:4. G5:8. E5:8. | F5:8. R:4. G5:8. | G5:4. F5:4. | E5:8. E5:4. C5:8. | D5:4. A4:4. |
+pad: | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 | G4:8 A#4:8 D5:8 A#4:8 G4:8 A#4:8 | A4:8 C5:8 E5:8 C5:8 A4:8 C5:8 | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 | G4:8 A#4:8 D5:8 A#4:8 G4:8 A#4:8 | A4:8 C5:8 E5:8 C5:8 A4:8 C5:8 | D4:8 F4:8 A4:8 F4:8 D4:8 F4:8 |
+bass: | D2:2. | G2:2. | A2:2. | D2:2. | D2:2. | G2:2. | A2:2. | D2:2. |
+
+[section end]
+lead: | D5:2. |
+pad: | D4:2. |
+bass: | D2:2. |
+
+[arrangement]
+intro a*2 b a b c a*2 b end

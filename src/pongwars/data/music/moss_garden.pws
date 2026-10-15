@@ -1,0 +1,39 @@
+# Moss Garden - generated style: gentle 6/8
+title = Moss Garden
+artist = Orbital Owl
+tempo = 72
+meter = 6/8
+volume = 0.9
+use = menu
+
+instrument lead = triangle duty=0.5 volume=0.4 attack=0.02 decay=0.1 sustain=0.7 release=0.12 vibrato=0.2
+instrument pad = square duty=0.25 volume=0.17 attack=0.01 decay=0.1 sustain=0.5 release=0.08
+instrument bass = triangle volume=0.55 attack=0.01 sustain=0.8 release=0.05
+
+[section intro]
+lead: | R:2. | R:2. | R:2. | R:2. |
+pad: | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 | A4:8 C#5:8 E5:8 C#5:8 A4:8 C#5:8 | B4:8 D#5:8 F#5:8 D#5:8 B4:8 D#5:8 | A4:8 C#5:8 E5:8 C#5:8 A4:8 C#5:8 |
+bass: | E2:2. | A2:2. | B2:2. | A2:2. |
+
+[section a]
+lead: | E5:8. B4:8. R:8. C#5:8. | C#5:4. B4:4. | B4:4. B4:4. | B4:4. C#5:8. B4:8. | E5:4. D#5:8. E5:8. | E5:4. D#5:8. R:8. | F#5:4. D#5:4. | E5:8. F#5:8. G#5:8. B5:8. |
+pad: | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 | A4:8 C#5:8 E5:8 C#5:8 A4:8 C#5:8 | B4:8 D#5:8 F#5:8 D#5:8 B4:8 D#5:8 | A4:8 C#5:8 E5:8 C#5:8 A4:8 C#5:8 | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 | A4:8 C#5:8 E5:8 C#5:8 A4:8 C#5:8 | B4:8 D#5:8 F#5:8 D#5:8 B4:8 D#5:8 | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 |
+bass: | E2:2. | A2:2. | B2:2. | A2:2. | E2:2. | A2:2. | B2:2. | E2:2. |
+
+[section b]
+lead: | B5:4. B5:8. R:8. | B5:4. E6:8. D#6:8. | E6:8. E6:8. D#6:4. | D#6:8. C#6:8. B5:4. | B5:4. E6:8. D#6:8. | D#6:4. C#6:4. | C#6:8. R:8. B5:4. | B5:8. C#6:8. G#5:4. |
+pad: | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 | G#4:8 B4:8 D#5:8 B4:8 G#4:8 B4:8 | C#5:8 E5:8 G#5:8 E5:8 C#5:8 E5:8 | B4:8 D#5:8 F#5:8 D#5:8 B4:8 D#5:8 | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 | G#4:8 B4:8 D#5:8 B4:8 G#4:8 B4:8 | C#5:8 E5:8 G#5:8 E5:8 C#5:8 E5:8 | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 |
+bass: | E2:2. | G#2:2. | C#3:2. | B2:2. | E2:2. | G#2:2. | C#3:2. | E2:2. |
+
+[section c]
+lead: | G#5:4. A5:4. | B5:4. E6:8. R:8. | C#6:4. B5:4. | B5:8. B5:8. C#6:8. F#6:8. | G#5:8. B5:8. B5:4. | B5:8. A5:8. F#5:8. G#5:8. | A5:4. C#6:4. | B5:8. E6:8. C#6:8. A5:8. |
+pad: | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 | B4:8 D#5:8 F#5:8 D#5:8 B4:8 D#5:8 | A4:8 C#5:8 E5:8 C#5:8 A4:8 C#5:8 | B4:8 D#5:8 F#5:8 D#5:8 B4:8 D#5:8 | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 | B4:8 D#5:8 F#5:8 D#5:8 B4:8 D#5:8 | A4:8 C#5:8 E5:8 C#5:8 A4:8 C#5:8 | E4:8 G#4:8 B4:8 G#4:8 E4:8 G#4:8 |
+bass: | E2:2. | B2:2. | A2:2. | B2:2. | E2:2. | B2:2. | A2:2. | E2:2. |
+
+[section end]
+lead: | E5:2. |
+pad: | E4:2. |
+bass: | E2:2. |
+
+[arrangement]
+intro a*2 b a b c a*2 b end
