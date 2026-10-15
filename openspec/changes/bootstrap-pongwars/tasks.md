@@ -67,12 +67,12 @@
 
 ## 8. Phase 7 - LAN (`lan-multiplayer`)
 
-- [ ] 8.1 `Transport`/`Codec` interfaces and in-memory transport
-- [ ] 8.2 Versioned protocol, snapshots and inputs
-- [ ] 8.3 Authoritative host and interpolating client
-- [ ] 8.4 Real UDP transport and broadcast discovery
-- [ ] 8.5 Simulated packet loss, timeouts and disconnection
-- [ ] 8.6 Full host<->client integration test
+- [x] 8.1 `Transport`/`Codec` interfaces and in-memory transport
+- [x] 8.2 Versioned protocol, snapshots and inputs
+- [x] 8.3 Authoritative host and interpolating client
+- [x] 8.4 Real UDP transport and broadcast discovery
+- [x] 8.5 Simulated packet loss, timeouts and disconnection
+- [x] 8.6 Full host<->client integration test
 
 ## 9. Phase 8 - Wrap-up
 

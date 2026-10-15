@@ -32,7 +32,7 @@ Main menu entries:
 
 - **Local play** - 2 or more humans on the same keyboard.
 - **Versus AI** - you against the AI (pick the difficulty in the setup screen).
-- **LAN host / LAN join** - disabled for now ("Soon"); LAN play is not implemented yet.
+- **LAN host / LAN join / LAN help** - play over a local network (see "LAN play" below).
 - **Settings** and **Quit**.
 
 ## Match setup
@@ -106,3 +106,25 @@ particles, ball trail, screen shake and the camera for 3-4 player arenas
   and set `language.name`; it appears in Settings automatically.
 - **Arena**: add a TOML file in `src/pongwars/data/arenas/`.
 - **Sounds**: edit `src/pongwars/data/audio/sounds.toml`.
+
+## LAN play
+
+One PC hosts and the others join; every PC runs its own copy of the game.
+
+**Host**: Main menu -> LAN host, configure the match (the local player is seat 1; the
+other human seats become open slots), then wait in the lobby. Start the match when the
+wanted players have joined; unfilled seats are played by AI bots.
+
+**Join**: Main menu -> LAN join. Hosts on the same subnet are found automatically
+(UDP broadcast); pick one. To connect directly, edit the address field (`IP` or
+`IP:PORT`) and press Connect. The player name is set in the same screen.
+
+**Network**: UDP port 47474. Allow the game through the firewall on the host.
+Both PCs must be on the same LAN. If the port is busy the lobby shows an error.
+
+**Disconnections**: if a player is silent for 5 seconds the host pauses and offers
+"replace with AI" or "wait". If the host closes, clients return to the menu with a notice.
+
+**Help**: Main menu -> LAN help explains all of this in four pages.
+
+Limitations: no internet relay/NAT traversal, no encryption, one match per host.

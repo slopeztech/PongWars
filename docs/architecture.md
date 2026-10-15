@@ -56,3 +56,12 @@ Powers, weapons, penalties and statuses are Effect subclasses registered in doma
 The ui package is a stack of screens (title, menus, setup with arena preview, match, pause overlay, results, settings) driven by pp.App. All text goes through the Translator; the bitmap font exposes 
 ormalize for unsupported characters. udio synthesizes chiptune sounds from data/audio/sounds.toml (event class name to sound) and falls back to silence without a device. core.settings.Settings persists user preferences as JSON in the user config directory.
 
+
+## LAN (net package)
+
+The host is authoritative: `HostSession` runs the `World`, receives client inputs and
+broadcasts snapshots; `ClientSession` sends inputs and interpolates snapshots. Messages
+are versioned dataclasses (`protocol`), encoded by a `Codec` (`codec`) and sent through
+a `Transport` (`UdpTransport` or the in-memory `MemoryNetwork` with simulated loss used
+by tests). `Discovery` finds hosts by broadcast. `net` imports only `core` and `domain`;
+the screens live in `ui/lan.py`.

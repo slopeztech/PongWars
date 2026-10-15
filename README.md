@@ -8,7 +8,7 @@ Classic Pong with an **8-bit** look and **pseudo-3D** view, built with Python an
 - Localizable UI (English source catalog; add languages by dropping a JSON file).
 
 > Status: playable locally (2-4 players on one keyboard, 1 vs AI, extras, settings, audio).
-> LAN play is planned and not implemented yet.
+> LAN play (host/join, discovery, help screen) is implemented; see `docs/user-guide.md`.
 
 ## Quick start
 

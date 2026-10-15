@@ -38,6 +38,7 @@ HINT_Y = LOW_H - 10
 EXTRAS_CHOICES = ("off", "all", "power", "weapon", "penalty")
 VIEWS = ("shared", "split")
 CONTROLLER_CHOICES = ("human", "ai")
+LAN_CONTROLLER_CHOICES = ("remote", "ai")
 MAX_SEED = 2**31 - 1
 BLINK_PERIOD = 1.0
 PREVIEW_BOX = (190, 100, 120, 68)
@@ -156,7 +157,6 @@ class MainMenuScreen(MenuScreen):
         """
         super().__init__(ctx)
         t = ctx.t
-        soon = lambda: t("menu.coming_soon")  # noqa: E731
         self.menu.set_items(
             [
                 MenuItem(
@@ -165,8 +165,9 @@ class MainMenuScreen(MenuScreen):
                 MenuItem(
                     lambda: t("menu.main.versus_ai"), on_activate=lambda: self.open(("human", "ai"))
                 ),
-                MenuItem(lambda: t("menu.main.lan_host"), soon, enabled=False),
-                MenuItem(lambda: t("menu.main.lan_join"), soon, enabled=False),
+                MenuItem(lambda: t("menu.main.lan_host"), on_activate=self.open_lan_host),
+                MenuItem(lambda: t("menu.main.lan_join"), on_activate=self.open_lan_join),
+                MenuItem(lambda: t("menu.main.lan_help"), on_activate=self.open_lan_help),
                 MenuItem(lambda: t("menu.main.appearance"), on_activate=self.open_appearance),
                 MenuItem(lambda: t("menu.main.howto"), on_activate=self.open_howto),
                 MenuItem(lambda: t("menu.main.settings"), on_activate=self.open_settings),
@@ -174,6 +175,22 @@ class MainMenuScreen(MenuScreen):
             ]
         )
         ctx.audio.start_music()
+
+    def open_lan_host(self) -> None:
+        """@brief Open the LAN host setup."""
+        self.ctx.stack.push(SetupScreen(self.ctx, ("human", "remote"), lan=True))
+
+    def open_lan_join(self) -> None:
+        """@brief Open the LAN join screen."""
+        from pongwars.ui.lan import LanJoinScreen  # noqa: PLC0415
+
+        self.ctx.stack.push(LanJoinScreen(self.ctx))
+
+    def open_lan_help(self) -> None:
+        """@brief Open the LAN help pages."""
+        from pongwars.ui.lan import LanHelpScreen  # noqa: PLC0415
+
+        self.ctx.stack.push(LanHelpScreen(self.ctx))
 
     def open_appearance(self) -> None:
         """@brief Open the appearance screen."""
@@ -203,12 +220,16 @@ class SetupScreen(MenuScreen):
 
     title_key = "setup.title"
 
-    def __init__(self, ctx: AppContext, preset: tuple[str, ...] = ("human", "human")) -> None:
+    def __init__(
+        self, ctx: AppContext, preset: tuple[str, ...] = ("human", "human"), lan: bool = False
+    ) -> None:
         """@brief Build the form.
         @param ctx Application context.
         @param preset Controllers used for the first seats.
+        @param lan True when hosting a LAN match (seat 1 is human, the rest remote or AI).
         """
         super().__init__(ctx)
+        self.lan = lan
         self.mode = "classic"
         self.arena = "classic"
         self.preset = preset
@@ -237,7 +258,9 @@ class SetupScreen(MenuScreen):
     def _fit_controllers(self) -> None:
         count = self.spec.players
         fitted = [
-            self.controllers[i] if i < len(self.controllers) else self.preset[i % len(self.preset)]
+            self.controllers[i]
+            if i < len(self.controllers)
+            else ("remote" if self.lan and i else self.preset[i % len(self.preset)])
             for i in range(count)
         ]
         self.controllers = fitted
@@ -253,7 +276,12 @@ class SetupScreen(MenuScreen):
         self.rebuild()
 
     def _set_controller(self, seat: int, step: int) -> None:
-        self.controllers[seat] = cycle(CONTROLLER_CHOICES, self.controllers[seat], step)
+        if self.lan:
+            if seat == 0:
+                return
+            self.controllers[seat] = cycle(LAN_CONTROLLER_CHOICES, self.controllers[seat], step)
+        else:
+            self.controllers[seat] = cycle(CONTROLLER_CHOICES, self.controllers[seat], step)
         self.rebuild()
 
     def _adjust_option(self, spec: OptionSpec, step: int) -> None:
@@ -350,6 +378,11 @@ class SetupScreen(MenuScreen):
         try:
             config = self.build_config()
         except ConfigError:
+            return
+        if self.lan:
+            from pongwars.ui.lan import LanLobbyScreen  # noqa: PLC0415
+
+            self.ctx.stack.push(LanLobbyScreen(self.ctx, config, self.view))
             return
         self.ctx.stack.push(MatchScreen(self.ctx, config, self.view))
 
@@ -510,25 +543,28 @@ class ResultsScreen(MenuScreen):
 
     title_key = "results.title"
 
-    def __init__(self, ctx: AppContext, config: MatchConfig, world: World, view: str) -> None:
+    def __init__(
+        self, ctx: AppContext, config: MatchConfig, world: World, view: str, lan: bool = False
+    ) -> None:
         """@brief Build the screen.
         @param ctx Application context.
         @param config Configuration that was played.
         @param world Finished world.
         @param view Camera mode used.
+        @param lan True for a network match (only "back to menu" is offered).
         """
         super().__init__(ctx)
         self.config = config
         self.world = world
         self.view = view
         t = ctx.t
-        self.menu.set_items(
-            [
-                MenuItem(lambda: t("results.rematch"), on_activate=self.rematch),
-                MenuItem(lambda: t("results.setup"), on_activate=self._to_setup),
-                MenuItem(lambda: t("results.menu"), on_activate=self._to_menu),
-            ]
-        )
+        rows = [
+            MenuItem(lambda: t("results.rematch"), on_activate=self.rematch),
+            MenuItem(lambda: t("results.setup"), on_activate=self._to_setup),
+            MenuItem(lambda: t("results.menu"), on_activate=self._to_menu),
+        ]
+        self.menu.set_items(rows[2:] if lan else rows)
+        self.lan = lan
 
     def headline(self) -> str:
         """@brief Winner message.
@@ -552,8 +588,11 @@ class ResultsScreen(MenuScreen):
         self.ctx.stack.pop_to(MainMenuScreen)
 
     def back(self) -> None:
-        """@brief Esc returns to the setup form."""
-        self._to_setup()
+        """@brief Esc returns to the setup form (or the menu for a network match)."""
+        if self.lan:
+            self._to_menu()
+        else:
+            self._to_setup()
 
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Draw winner, scores and actions.

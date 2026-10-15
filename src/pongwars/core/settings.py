@@ -68,6 +68,8 @@ class Settings:
     view: str = "shared"
     music_track: str = "random"
     background: str = "grid"
+    player_name: str = "PLAYER"
+    last_host: str = ""
     paddle_colors: list[int] = field(default_factory=lambda: [0, 1, 2, 3])
     paddle_skins: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     keys: dict[str, list[int]] = field(default_factory=dict)

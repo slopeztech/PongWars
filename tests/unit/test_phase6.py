@@ -246,7 +246,13 @@ def test_main_menu_entries(ctx: AppContext) -> None:
     assert isinstance(setup, SetupScreen)
     assert setup.controllers == ["human", "ai"]
     ctx.stack.pop()
-    menu.handle_event(key(pygame.K_DOWN))  # skips the two disabled LAN rows
+    menu.handle_event(key(pygame.K_DOWN))
+    menu.handle_event(key(pygame.K_RETURN))
+    setup = ctx.stack.top
+    assert isinstance(setup, SetupScreen) and setup.lan
+    ctx.stack.pop()
+    for _ in range(3):  # join, help, appearance
+        menu.handle_event(key(pygame.K_DOWN))
     menu.handle_event(key(pygame.K_RETURN))
     assert isinstance(ctx.stack.top, AppearanceScreen)
     ctx.stack.pop()
