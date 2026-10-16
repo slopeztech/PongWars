@@ -1,0 +1,45 @@
+# The Long Return - a slow, orchestral-leaning chiptune
+title = The Long Return
+artist = The Quiet Arcade
+tempo = 69
+meter = 4/4
+volume = 0.68
+use = any
+
+instrument lead = triangle volume=0.18 attack=0.08 decay=0.18 sustain=0.45 release=0.35 vibrato=0.08
+instrument pad = triangle volume=0.17 attack=0.12 decay=0.2 sustain=0.6 release=0.45
+instrument harmony = triangle volume=0.09 attack=0.16 decay=0.2 sustain=0.5 release=0.5
+instrument bass = triangle volume=0.22 attack=0.08 decay=0.12 sustain=0.65 release=0.3
+
+[section intro]
+lead: | R:1 | R:1 | R:1 | R:1 |
+pad: | F#4:1 | D4:1 | A3:1 | E4:1 |
+harmony: | C#5:1 | A4:1 | E5:1 | B4:1 |
+bass: | F#3:1 | D3:1 | A2:1 | E3:1 |
+
+[section a]
+lead: | C#5:2 A4:2 | F#5:2 A4:2 | E5:2 A4:2 | G#5:2 R:2 | C#5:2 A5:2 | D5:2 F#5:2 | C#5:2 E5:2 | E5:2 R:2 |
+pad: | F#4:1 | D4:1 | A3:1 | E4:1 | F#4:1 | D4:1 | A4:1 | E4:1 |
+harmony: | C#5:1 | A4:1 | E5:1 | B4:1 | C#5:1 | A5:1 | E5:1 | B5:1 |
+bass: | F#3:2 C#3:2 | D3:2 A2:2 | A2:2 E3:2 | E3:2 B2:2 | F#3:2 C#3:2 | D3:2 A3:2 | A3:2 E3:2 | E3:2 B3:2 |
+
+[section b]
+lead: | A5:2 D6:2 | C#6:2 A5:2 | B5:2 G#6:2 | F#6:2 R:2 | F#6:2 A6:2 | A6:2 E6:2 | B6:2 G#6:2 | A6:2 R:2 |
+pad: | D4:1 | A3:1 | E4:1 | F#4:1 | D4:1 | A4:1 | E4:1 | F#4:1 |
+harmony: | A4:1 | E5:1 | B4:1 | C#5:1 | A5:1 | E5:1 | B5:1 | C#5:1 |
+bass: | D3:2 A2:2 | A2:2 E3:2 | E3:2 B2:2 | F#3:2 C#3:2 | D3:2 A3:2 | A3:2 E3:2 | E3:2 B3:2 | F#3:2 C#3:2 |
+
+[section c]
+lead: | B5:2 B5:2 | E5:2 G#5:2 | A5:2 B5:2 | D5:2 A4:2 | B5:2 B5:2 | G#5:2 B5:2 | B5:2 B5:2 | F#5:2 D5:2 |
+pad: | A3:1 | E4:1 | F#4:1 | D4:1 | A4:1 | E4:1 | F#4:1 | D4:1 |
+harmony: | E5:1 | B4:1 | C#5:1 | A4:1 | E5:1 | B5:1 | C#5:1 | A5:1 |
+bass: | A2:2 E3:2 | E3:2 B2:2 | F#3:2 C#3:2 | D3:2 A2:2 | A3:2 E3:2 | E3:2 B3:2 | F#3:2 C#3:2 | D3:2 A3:2 |
+
+[section end]
+lead: | A4:1 |
+pad: | A3:1 |
+harmony: | E5:1 |
+bass: | A2:1 |
+
+[arrangement]
+intro a*2 b*2 c*2 a*2 end

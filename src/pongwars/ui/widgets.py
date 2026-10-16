@@ -72,11 +72,8 @@ class MusicNotice:
         pygame.draw.rect(card, pal.UI_DARK, (2, 2, width - 4, height - 4), 1)
 
         icon_x, icon_y = 5, 5
-        pygame.draw.rect(card, pal.UI_CYAN, (icon_x + 5, icon_y, 2, 10))
-        pygame.draw.rect(card, pal.UI_CYAN, (icon_x + 5, icon_y, 6, 2))
-        pygame.draw.rect(card, pal.UI_CYAN, (icon_x + 9, icon_y + 2, 2, 5))
-        pygame.draw.ellipse(card, pal.UI_CYAN, (icon_x, icon_y + 7, 5, 4))
-        pygame.draw.ellipse(card, pal.UI_CYAN, (icon_x + 5, icon_y + 8, 5, 4))
+        pygame.draw.rect(card, pal.UI_CYAN, (icon_x + 7, icon_y, 2, 10))
+        pygame.draw.ellipse(card, pal.UI_CYAN, (icon_x, icon_y + 8, 7, 5))
 
         text_x, text_width_limit = 21, width - 27
         title = _truncate(self._title, text_width_limit)

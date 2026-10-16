@@ -2,6 +2,8 @@
 @brief Command line entry point (`python -m pongwars` / `pongwars`).
 """
 
+import multiprocessing
+
 
 def main() -> int:
     """@brief Launch the game.
@@ -15,4 +17,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     raise SystemExit(main())

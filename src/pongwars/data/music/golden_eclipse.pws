@@ -1,0 +1,45 @@
+# Golden Eclipse - a slow, orchestral-leaning chiptune
+title = Golden Eclipse
+artist = The Quiet Arcade
+tempo = 59
+meter = 4/4
+volume = 0.68
+use = any
+
+instrument lead = triangle volume=0.18 attack=0.08 decay=0.18 sustain=0.45 release=0.35 vibrato=0.08
+instrument pad = triangle volume=0.17 attack=0.12 decay=0.2 sustain=0.6 release=0.45
+instrument harmony = triangle volume=0.09 attack=0.16 decay=0.2 sustain=0.5 release=0.5
+instrument bass = triangle volume=0.22 attack=0.08 decay=0.12 sustain=0.65 release=0.3
+
+[section intro]
+lead: | R:1 | R:1 | R:1 | R:1 |
+pad: | A3:1 | F3:1 | C3:1 | G3:1 |
+harmony: | E4:1 | C4:1 | G4:1 | D4:1 |
+bass: | A2:1 | F2:1 | C2:1 | G2:1 |
+
+[section a]
+lead: | A4:2 C4:2 | A4:2 C4:2 | C4:2 G4:2 | D4:2 R:2 | C5:2 E5:2 | C5:2 F5:2 | E5:2 C5:2 | D5:2 R:2 |
+pad: | A3:1 | F3:1 | C3:1 | G3:1 | A4:1 | F4:1 | C4:1 | G4:1 |
+harmony: | E4:1 | C4:1 | G4:1 | D4:1 | E5:1 | C5:1 | G5:1 | D5:1 |
+bass: | A2:2 E2:2 | F2:2 C2:2 | C2:2 G2:2 | G2:2 D2:2 | A3:2 E3:2 | F3:2 C3:2 | C3:2 G3:2 | G3:2 D3:2 |
+
+[section b]
+lead: | F5:2 C5:2 | G5:2 E5:2 | B5:2 D5:2 | E5:2 R:2 | A6:2 F6:2 | G6:2 E6:2 | G6:2 B6:2 | C6:2 R:2 |
+pad: | F3:1 | C3:1 | G3:1 | A3:1 | F4:1 | C4:1 | G4:1 | A4:1 |
+harmony: | C4:1 | G4:1 | D4:1 | E4:1 | C5:1 | G5:1 | D5:1 | E5:1 |
+bass: | F2:2 C2:2 | C2:2 G2:2 | G2:2 D2:2 | A2:2 E2:2 | F3:2 C3:2 | C3:2 G3:2 | G3:2 D3:2 | A3:2 E3:2 |
+
+[section c]
+lead: | E5:2 G5:2 | D4:2 G4:2 | C5:2 A5:2 | C4:2 A4:2 | B5:2 B5:2 | B5:2 D5:2 | B5:2 B5:2 | C5:2 A5:2 |
+pad: | C3:1 | G3:1 | A3:1 | F3:1 | C4:1 | G4:1 | A4:1 | F4:1 |
+harmony: | G4:1 | D4:1 | E4:1 | C4:1 | G5:1 | D5:1 | E5:1 | C5:1 |
+bass: | C2:2 G2:2 | G2:2 D2:2 | A2:2 E2:2 | F2:2 C2:2 | C3:2 G3:2 | G3:2 D3:2 | A3:2 E3:2 | F3:2 C3:2 |
+
+[section end]
+lead: | C4:1 |
+pad: | C3:1 |
+harmony: | G4:1 |
+bass: | C2:1 |
+
+[arrangement]
+intro a*2 b*2 c*2 a*2 end

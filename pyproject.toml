@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pongwars"
-version = "0.1.0"
+dynamic = ["version"]
 license = "MIT"
 license-files = ["LICENSE"]
 description = "PongWars: 8-bit pseudo-3D Pong with arenas, extras, AI and LAN play"
@@ -20,12 +20,16 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
 ]
+build = ["pyinstaller>=6.11"]
 
 [project.scripts]
 pongwars = "pongwars.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pongwars"]
+
+[tool.hatch.version]
+path = "src/pongwars/version.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

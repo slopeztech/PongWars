@@ -1,0 +1,113 @@
+name: Build and publish release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Test, build, and publish
+    runs-on: windows-latest
+    steps:
+      - name: Check out latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project and build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,build]" build
+
+      - name: Run quality checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          ruff check src/pongwars/version.py src/pongwars/__init__.py scripts/bump_version.py tests/unit/test_package.py
+          ruff format --check src/pongwars/version.py src/pongwars/__init__.py scripts/bump_version.py tests/unit/test_package.py
+          mypy src/pongwars/version.py src/pongwars/__init__.py
+          $env:SDL_VIDEODRIVER = "dummy"
+          $env:SDL_AUDIODRIVER = "dummy"
+          pytest --cov=pongwars --cov-report=term-missing
+
+      - name: Increment patch version
+        id: version
+        shell: pwsh
+        run: |
+          $version = python scripts/bump_version.py
+          if ($LASTEXITCODE -ne 0) {
+            throw "Version increment failed."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build Python distributions
+        run: python -m build --outdir dist
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        run: .\scripts\build-windows-installer.ps1
+
+      - name: Prepare release checksums
+        shell: pwsh
+        run: |
+          $assets = @(Get-ChildItem dist -File)
+          $assets += Get-Item "build\windows\installer\PongWars-Setup-${{ steps.version.outputs.version }}.exe"
+          $lines = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($asset.Name)"
+          }
+          Set-Content -Path SHA256SUMS.txt -Value $lines -Encoding ascii
+
+      - name: Commit version and create tag
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/pongwars/version.py
+          git commit -m "chore: release v$env:VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not commit the version bump."
+          }
+          git tag -a "v$env:VERSION" -m "PongWars v$env:VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not create tag v$env:VERSION."
+          }
+          git push origin HEAD:main "refs/tags/v$env:VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not push the version commit and tag."
+          }
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $assets = @(Get-ChildItem dist -File | ForEach-Object { $_.FullName })
+          $assets += (Resolve-Path "build\windows\installer\PongWars-Setup-$env:VERSION.exe").Path
+          $assets += (Resolve-Path "SHA256SUMS.txt").Path
+          gh release create "v$env:VERSION" $assets `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "PongWars $env:VERSION" `
+            --generate-notes
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not publish GitHub Release v$env:VERSION."
+          }

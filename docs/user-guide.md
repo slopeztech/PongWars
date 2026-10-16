@@ -1,21 +1,14 @@
 # PongWars User Guide
 
-## Requirements
-
-- Python 3.11 or newer
-- A desktop with a display (audio is optional; the game stays silent without a sound device)
-
 ## Install and start
 
-```powershell
-cd PongWars
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e .[dev]
-python -m pongwars        # or simply: pongwars
-```
+On Windows, download and run **PongWars-Setup** from the
+[PongWars releases page](https://github.com/slopeztech/PongWars/releases). The installer
+includes the game and its runtime dependencies; Python is not required. If no installer
+is listed on the releases page, a public download has not been published yet.
 
-Linux/macOS: use `source .venv/bin/activate` instead of the `Activate.ps1` line.
+For instructions to run from source with Python, see
+[Running from the Python console](python-console.md).
 
 ## Menus
 

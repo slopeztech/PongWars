@@ -5,4 +5,4 @@ Layering (imports only flow in this direction):
 `app -> ui / render / input / audio / net -> domain <- ai`.
 """
 
-__version__ = "0.1.0"
+from pongwars.version import __version__ as __version__

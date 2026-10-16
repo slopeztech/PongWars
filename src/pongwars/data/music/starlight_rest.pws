@@ -3,12 +3,12 @@ title = Starlight Rest
 artist = Nova Nibble
 tempo = 62
 meter = 4/4
-volume = 0.9
+volume = 0.76
 use = menu
 
-instrument lead = triangle duty=0.5 volume=0.4 attack=0.02 decay=0.1 sustain=0.7 release=0.12 vibrato=0.35
-instrument pad = square duty=0.25 volume=0.17 attack=0.01 decay=0.1 sustain=0.5 release=0.08
-instrument bass = triangle volume=0.55 attack=0.01 sustain=0.8 release=0.05
+instrument lead = triangle volume=0.22 attack=0.06 decay=0.14 sustain=0.55 release=0.28 vibrato=0.06
+instrument pad = triangle volume=0.11 attack=0.1 decay=0.16 sustain=0.5 release=0.35
+instrument bass = triangle volume=0.3 attack=0.06 decay=0.1 sustain=0.65 release=0.22
 
 [section intro]
 lead: | R:1 | R:1 | R:1 | R:1 |
@@ -21,12 +21,12 @@ pad: | F#4:1 | F#5:1 | B4:1 | E5:1 | F#4:1 | F#5:1 | B4:1 | A4:1 |
 bass: | D2:1 | B2:1 | G2:1 | A2:1 | D2:1 | B2:1 | G2:1 | D2:1 |
 
 [section b]
-lead: | F#5:2 R:4. A5:8 | B5:2 A5:2 | A5:2 G5:2 | A5:1 | B5:2. B5:4 | B5:2 A5:2 | A5:4 G5:4 A5:2 | A5:2 D6:4 B5:4 |
+lead: | F#5:2 R:4. A5:8 | B5:2 A5:2 | A5:2 G5:2 | A5:1 | B5:2. B5:4 | B5:2 A5:2 | A5:4 G5:4 A5:2 | A5:2 D5:4 B5:4 |
 pad: | D5:1 | D5:1 | F#4:1 | E5:1 | D5:1 | D5:1 | F#4:1 | A4:1 |
 bass: | B2:1 | G2:1 | D2:1 | A2:1 | B2:1 | G2:1 | D2:1 | D2:1 |
 
 [section c]
-lead: | D5:4 G5:4 A5:2 | A5:4 B5:4 R:2 | F#6:2. E6:4 | D6:2. F#6:4 | F#5:2 F#5:4. D5:8 | E5:2. E5:4 | D5:2 A4:2 | B4:2 A4:4 B4:4 |
+lead: | D5:4 G5:4 A5:2 | A5:4 B5:4 R:2 | F#5:2. E5:4 | D5:2. F#5:4 | F#5:2 F#5:4. D5:8 | E5:2. E5:4 | D5:2 A4:2 | B4:2 A4:4 B4:4 |
 pad: | F#4:1 | E5:1 | D5:1 | D5:1 | F#4:1 | E5:1 | D5:1 | A4:1 |
 bass: | D2:1 | A2:1 | B2:1 | G2:1 | D2:1 | A2:1 | B2:1 | D2:1 |
 
