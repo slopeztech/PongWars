@@ -104,6 +104,24 @@ def test_ai_moves_toward_ball_and_is_deterministic() -> None:
     assert any(m != 0.0 for m in run())
 
 
+def test_ai_keeps_moving_clumsily_when_controls_are_inverted() -> None:
+    world = _world(4)
+    world.phase = Phase.PLAYING
+    world.paddles[0].rect.cy = 20.0
+    world.ball.pos = Vec2(100.0, 70.0)
+    world.ball.vel = Vec2(-80.0, 0.0)
+    world.extras.apply_direct("inverted", 0, [])
+    ai = AIController(_observer(world, 0), "hard", seed=4)
+    start = world.paddles[0].rect.cy
+
+    for _ in range(20):
+        move = ai.poll()
+        assert abs(move) <= ai.profile.speed * 0.6
+        world.step(FrameInputs((move, 0.0)))
+
+    assert world.paddles[0].rect.cy > start + 5.0
+
+
 def test_unknown_difficulty_and_strategy() -> None:
     with pytest.raises(RegistryError):
         AIController(lambda: Observation.from_world(_world(), 0), "godlike")

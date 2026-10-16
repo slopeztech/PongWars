@@ -10,6 +10,7 @@ from pongwars.domain.events import (
     EffectExpired,
     Event,
     Goal,
+    LaserFired,
     PickupCollected,
     PickupSpawned,
     ShieldUsed,
@@ -34,6 +35,105 @@ def make_world(**kwargs: object) -> World:
 def test_every_spec_has_an_effect_class() -> None:
     for name in load_specs():
         assert EFFECTS.get(name).name == name
+
+
+def test_ramp_only_spawns_in_two_player_matches() -> None:
+    duel = World(MatchConfig(extras=("ramp",), seed=3))
+    three_player = World(
+        MatchConfig(
+            arena="trident",
+            controllers=("human", "human", "human"),
+            extras=("ramp",),
+            seed=3,
+        )
+    )
+
+    assert duel.extras.spawn_names == ["ramp"]
+    assert three_player.extras.spawn_names == []
+
+
+def test_invasor_moves_slowly_and_fires_at_most_five_slow_bombs() -> None:
+    world = make_world()
+    events: list[Event] = []
+    world.extras.apply_direct("invasor", 1, events)
+    invader = world.extras.invaders[0]
+    start = invader.pos
+
+    assert invader.pos.x < c.FIELD_WIDTH / 2
+    for _ in range(c.INVADER_FIRE_INTERVAL_TICKS * 6):
+        world.tick += 1
+        previous = invader.pos
+        world.extras.update_invaders()
+        assert (invader.pos - previous).length() <= c.INVADER_SPEED / c.TICK_RATE + 1e-9
+
+    assert invader.pos != start
+    assert invader.bombs_left == 0
+    assert len(world.extras.missiles) == c.INVADER_BOMBS_PER_EFFECT
+    assert all(m.target == 1 for m in world.extras.missiles)
+    assert all(m.vel.length() == pytest.approx(c.INVADER_BOMB_SPEED) for m in world.extras.missiles)
+
+
+def test_cleansing_invasor_removes_the_npc() -> None:
+    world = make_world()
+    world.extras.apply_direct("invasor", 1, [])
+
+    world.extras.clear_penalties(1, [])
+
+    assert world.extras.invaders == []
+
+
+def test_laser_event_identifies_paddle_hit() -> None:
+    world = make_world()
+    world.paddles[1].rect.cy = world.paddles[0].rect.cy
+    world.extras.weapons[0] = ("laser", 1)
+    events: list[Event] = []
+
+    world.extras.fire(0, events)
+
+    laser = next(event for event in events if isinstance(event, LaserFired))
+    assert laser.target == 1
+
+
+@pytest.mark.parametrize(
+    ("target", "initial_vx", "expected"),
+    [
+        (0, 20.0, "slower"),
+        (0, -20.0, "faster"),
+        (1, -20.0, "slower"),
+        (1, 20.0, "faster"),
+    ],
+)
+def test_ramp_accelerates_downhill_and_slows_uphill(
+    target: int, initial_vx: float, expected: str
+) -> None:
+    world = make_world()
+    world.ball.pos = Vec2(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2)
+    world.ball.vel = Vec2(initial_vx, 0.0)
+    world.extras.apply_direct("ramp", target, [])
+
+    for _ in range(12):
+        world.step(IDLE)
+
+    if expected == "slower":
+        assert abs(world.ball.vel.x) < abs(initial_vx)
+    else:
+        assert abs(world.ball.vel.x) > abs(initial_vx)
+
+
+def test_ramp_incline_eases_in_and_out() -> None:
+    world = make_world()
+    world.extras.apply_direct("ramp", 0, [])
+    assert world.ramp_incline == 0.0
+
+    for _ in range(round(c.RAMP_TRANSITION_SECONDS * c.TICK_RATE) // 2):
+        world.extras.tick_effects([])
+    assert 0.0 < world.ramp_incline < world.extras.specs["ramp"].magnitude
+
+    effect = world.extras.active[0][0]
+    effect.remaining = round(c.RAMP_TRANSITION_SECONDS * c.TICK_RATE) // 2
+    assert 0.0 < world.ramp_incline < world.extras.specs["ramp"].magnitude
+    effect.remaining = 1
+    assert world.ramp_incline < 0.001
 
 
 def test_unknown_extra_is_rejected() -> None:

@@ -7,7 +7,7 @@ from dataclasses import fields
 from typing import Any
 
 from pongwars.domain import events as ev
-from pongwars.domain.entities import Ball, Cat, Companion, Missile, Paddle, Rect
+from pongwars.domain.entities import Ball, Cat, Companion, Invader, Missile, Paddle, Rect
 from pongwars.domain.extras import EFFECTS, Pickup
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import Phase, World
@@ -73,6 +73,20 @@ def capture(world: World) -> dict[str, Any]:
             ]
             for a in world.extras.companions
         ],
+        "invaders": [
+            [
+                _r(invader.pos.x),
+                _r(invader.pos.y),
+                invader.target,
+                invader.ttl,
+                invader.fire_timer,
+                invader.bombs_left,
+                _r(invader.phase),
+                _r(invader.anchor.x),
+                _r(invader.anchor.y),
+            ]
+            for invader in world.extras.invaders
+        ],
         "missiles": [
             [
                 _r(m.pos.x),
@@ -82,6 +96,8 @@ def capture(world: World) -> dict[str, Any]:
                 m.owner,
                 m.ttl,
                 _r(m.radius),
+                m.target,
+                m.kind,
             ]
             for m in world.extras.missiles
         ],
@@ -152,6 +168,28 @@ def _apply(world: World, state: dict[str, Any]) -> None:
         )
         for x, y, half_w, half_h, axis, owner, ttl in state.get("companions", [])
     ]
+    manager.invaders = [
+        Invader(
+            Vec2(float(x), float(y)),
+            int(target),
+            int(ttl),
+            int(fire_timer),
+            int(bombs_left),
+            float(phase),
+            Vec2(float(anchor_x), float(anchor_y)),
+        )
+        for (
+            x,
+            y,
+            target,
+            ttl,
+            fire_timer,
+            bombs_left,
+            phase,
+            anchor_x,
+            anchor_y,
+        ) in state.get("invaders", [])
+    ]
     manager.missiles = [
         Missile(
             Vec2(float(x), float(y)),
@@ -159,8 +197,11 @@ def _apply(world: World, state: dict[str, Any]) -> None:
             int(owner),
             int(ttl),
             float(radius),
+            None if len(row) < 8 or row[7] is None else int(row[7]),
+            str(row[8]) if len(row) > 8 else "missile",
         )
-        for x, y, vx, vy, owner, ttl, radius in state.get("missiles", [])
+        for row in state.get("missiles", [])
+        for x, y, vx, vy, owner, ttl, radius in [row[:7]]
     ]
     for pickup in manager.pickups:
         if pickup.name not in manager.specs:

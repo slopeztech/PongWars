@@ -11,13 +11,14 @@ from pongwars.domain.arenas.loader import (
     load_arena_file,
     parse_arena,
 )
-from pongwars.domain.arenas.spec import ArenaSpec, ObstacleSpec
+from pongwars.domain.arenas.spec import ArenaSpec, ObstacleSpec, ServeSpec
 
 __all__ = [
     "ARENAS",
     "ArenaError",
     "ArenaSpec",
     "ObstacleSpec",
+    "ServeSpec",
     "arena_names",
     "ensure_builtin_arenas",
     "get_arena",

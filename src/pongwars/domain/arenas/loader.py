@@ -9,7 +9,7 @@ from typing import Any
 
 from pongwars.core.registry import Registry
 from pongwars.domain import constants as c
-from pongwars.domain.arenas.spec import ArenaSpec, ObstacleSpec
+from pongwars.domain.arenas.spec import ArenaSpec, ObstacleSpec, ServeSpec
 from pongwars.domain.config import MAX_PLAYERS, MIN_PLAYERS, ConfigError
 
 ARENAS: Registry[ArenaSpec] = Registry("arena")
@@ -80,9 +80,27 @@ def parse_arena(data: dict[str, Any], source: str = "<memory>") -> ArenaSpec:
             variants += [v.mirrored("y") for v in variants]
         for variant in variants:
             obstacles.setdefault(variant.key(), variant)
+    serve_data = data.get("serve", {})
+    if not isinstance(serve_data, dict):
+        raise ArenaError("error.arena.invalid_value", source)
+    try:
+        serve = ServeSpec(
+            x=float(serve_data.get("x", c.FIELD_WIDTH / 2)),
+            y=float(serve_data.get("y", c.FIELD_HEIGHT / 2)),
+            speed=float(serve_data.get("speed", c.BALL_START_SPEED)),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ArenaError("error.arena.invalid_value", source) from exc
+    if serve.validate():
+        raise ArenaError("error.arena.invalid_value", source)
     arena_id = str(data["id"])
     arena = ArenaSpec(
-        arena_id, f"arena.{arena_id}.name", str(data["theme"]), tuple(obstacles.values()), players
+        arena_id,
+        f"arena.{arena_id}.name",
+        str(data["theme"]),
+        tuple(obstacles.values()),
+        players,
+        serve,
     )
     if not arena.has_open_path():
         raise ArenaError("error.arena.blocked_path", source)

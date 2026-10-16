@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from pongwars.domain import constants as c
 from pongwars.domain.config import ConfigError
-from pongwars.domain.entities import Ball, Cat, Companion, Missile
+from pongwars.domain.entities import Ball, Cat, Companion, Invader, Missile
 from pongwars.domain.events import (
     CatPounced,
     EffectApplied,
@@ -55,6 +55,7 @@ class ExtrasManager:
         self.pickups: list[Pickup] = []
         self.cats: list[Cat] = []
         self.companions: list[Companion] = []
+        self.invaders: list[Invader] = []
         self.missiles: list[Missile] = []
         self.active: list[list[Effect]] = [[] for _ in range(world.players)]
         self.weapons: list[tuple[str, int] | None] = [None] * world.players
@@ -73,6 +74,7 @@ class ExtrasManager:
             for name, spec in sorted(self.specs.items())
             if spec.weight > 0
             and (ALL_EXTRAS in selection or name in selection or spec.category in selection)
+            and (name != "ramp" or self._world.players == 2)
         ]
 
     def mods(self, player: int) -> Mods:
@@ -98,6 +100,7 @@ class ExtrasManager:
 
     def _expire(self, player: int, effect: Effect, events: list[Event]) -> None:
         self.active[player].remove(effect)
+        effect.on_expire(self._world, player, events)
         events.append(EffectExpired(player, effect.name))
 
     def apply(self, name: str, player: int, events: list[Event], reduced: bool = False) -> None:
@@ -203,6 +206,57 @@ class ExtrasManager:
                 direction = 1.0 if helper_pos >= owner_pos else -1.0
                 paddle.move(direction * speed * 0.2, extent)
 
+    def update_invaders(self) -> None:
+        """@brief Move invaders slowly and launch up to five bombs at their targets."""
+        world = self._world
+        for invader in list(self.invaders):
+            invader.ttl -= 1
+            if invader.ttl <= 0 or not world.alive[invader.target]:
+                self.invaders.remove(invader)
+                continue
+            elapsed = world.tick / c.TICK_RATE
+            desired = invader.anchor + Vec2(
+                24.0 * math.sin(elapsed * 0.65 + invader.phase),
+                20.0 * math.sin(elapsed * 0.9 + invader.phase * 0.7),
+            )
+            desired = Vec2(
+                min(max(desired.x, 8.0), c.FIELD_WIDTH - 8.0),
+                min(max(desired.y, 8.0), c.FIELD_HEIGHT - 8.0),
+            )
+            delta = desired - invader.pos
+            distance = delta.length()
+            if distance > 0.0:
+                step = min(c.INVADER_SPEED * c.DT, distance)
+                invader.pos = invader.pos + delta * (step / distance)
+            if invader.bombs_left <= 0:
+                continue
+            invader.fire_timer -= 1
+            if invader.fire_timer > 0:
+                continue
+            paddle = world.paddles[invader.target].rect
+            direction = Vec2(paddle.cx - invader.pos.x, paddle.cy - invader.pos.y)
+            distance = direction.length()
+            if distance > 0.0:
+                direction = direction * (1.0 / distance)
+                owners = opponents(world, invader.target)
+                if not owners:
+                    self.invaders.remove(invader)
+                    continue
+                owner = owners[0]
+                self.missiles.append(
+                    Missile(
+                        invader.pos,
+                        direction * c.INVADER_BOMB_SPEED,
+                        owner,
+                        c.INVADER_BOMB_TTL_TICKS,
+                        c.INVADER_BOMB_RADIUS,
+                        target=invader.target,
+                        kind="bomb",
+                    )
+                )
+                invader.bombs_left -= 1
+            invader.fire_timer = c.INVADER_FIRE_INTERVAL_TICKS
+
     def update_missiles(self, events: list[Event]) -> None:
         """@brief Move missiles, damaging obstacles or stunning the first opponent hit."""
         world = self._world
@@ -219,7 +273,11 @@ class ExtrasManager:
                 if hit is not None and hit.t <= best_t:
                     best_t, obstacle_hit, player_hit = hit.t, index, None
             for seat, paddle in enumerate(world.paddles):
-                if seat == missile.owner or not world.alive[seat]:
+                if not world.alive[seat]:
+                    continue
+                if missile.target is not None and seat != missile.target:
+                    continue
+                if missile.target is None and seat == missile.owner:
                     continue
                 hit = sweep_circle_rect(missile.pos, disp, missile.radius, paddle.rect)
                 if hit is not None and hit.t < best_t:

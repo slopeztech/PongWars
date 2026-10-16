@@ -11,8 +11,8 @@ import pytest
 
 from pongwars.core.i18n import Translator
 from pongwars.domain.config import MatchConfig
-from pongwars.domain.events import BallWarped, BombDetonated, Event
-from pongwars.domain.extras import Pickup
+from pongwars.domain.events import BallWarped, BombDetonated, Event, LaserFired, MissileHit
+from pongwars.domain.extras import Pickup, load_specs
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import FrameInputs, World
 from pongwars.render import palette as pal
@@ -64,6 +64,38 @@ def test_bomb_detonation_starts_and_expires_explosion_animation(
 
     renderer.update(world, 0.5)
     assert renderer.explosions == []
+
+
+def test_laser_and_missile_paddle_hits_start_explosions() -> None:
+    pygame.init()
+    world = _world()
+    renderer = Renderer()
+
+    renderer.handle_events(
+        world,
+        [LaserFired(0, 140.0, 45.0, 1), MissileHit(0, 140.0, 45.0, 1)],
+    )
+
+    assert len(renderer.explosions) == 2
+    assert [(e.x, e.y) for e in renderer.explosions] == [
+        (140.0, 45.0),
+        (140.0, 45.0),
+    ]
+
+
+def test_invasor_renders_without_error() -> None:
+    pygame.init()
+    world = _world()
+    world.extras.apply_direct("invasor", 1, [])
+    renderer = Renderer()
+    renderer.draw(world)
+
+
+def test_every_extra_has_a_unique_category_colored_pickup_icon() -> None:
+    specs = load_specs()
+    assert set(specs) == set(renderer_module.PICKUP_ICONS)
+    assert len(set(renderer_module.PICKUP_ICONS.values())) == len(specs)
+    assert set(spec.category for spec in specs.values()) <= set(renderer_module.CATEGORY_COLORS)
 
 
 def test_portal_arena_renders_both_portals() -> None:
@@ -244,7 +276,6 @@ def test_spanish_hud_draws_complete_effect_and_weapon_names(
         "Controles invertidos 7",
         "Asistencia de puntería 11",
         "Congelar X2",
-        "Pala pequeña",
     }
     assert all(x >= 0 and x + text_width(text) <= view.rect.width for text, x, _ in rendered)
     effect_rows = {

@@ -213,6 +213,19 @@ def test_headbutt_hit_delivers_a_fast_smash() -> None:
     assert world.ball.vel.length() == pytest.approx(80.0 * c.HEADBUTT_HIT_SPEED_FACTOR)
 
 
+def test_headbutt_with_inverted_controls_does_not_send_ball_toward_own_goal() -> None:
+    world = make_world()
+    world.extras.apply_direct("inverted", 0, [])
+    world.extras.weapons[0] = ("headbutt", 1)
+    world.ball.pos = Vec2(12.0, world.paddles[0].rect.cy)
+    world.ball.vel = Vec2(80.0, 0.0)
+
+    events = world.step(FrameInputs(fire=(True, False)))
+
+    assert PaddleHit(0) in events
+    assert world.ball.vel.x > 0.0
+
+
 def test_missile_destroys_destructible_obstacle() -> None:
     obstacle = Obstacle(Rect(30.0, 45.0, 1.0, 15.0), "destructible", hp=1)
     world = make_world()
@@ -280,12 +293,42 @@ def test_missile_stuns_opponent() -> None:
     assert any(effect.name == "stun" for effect in world.extras.active[1])
 
 
+def test_invader_bomb_stuns_only_its_target() -> None:
+    world = make_world()
+    world.obstacles = []
+    world.paddles[1].rect.cy = 45.0
+    world.extras.missiles.append(
+        Missile(
+            Vec2(145.0, 45.0),
+            Vec2(52.0, 0.0),
+            0,
+            60,
+            c.INVADER_BOMB_RADIUS,
+            target=1,
+            kind="bomb",
+        )
+    )
+
+    events: list[Event] = []
+    for _ in range(20):
+        world.extras.update_missiles(events)
+        if any(isinstance(event, MissileHit) for event in events):
+            break
+
+    assert any(isinstance(event, MissileHit) and event.target == 1 for event in events)
+    assert any(effect.name == "stun" for effect in world.extras.active[1])
+    assert not world.extras.missiles
+
+
 def test_snapshot_preserves_spin_companion_missile_and_targeted_pickup() -> None:
     source = make_world()
     source.ball.rotation = 1.25
     source.ball.spin_rate = -7.0
     source.extras.apply("companion", 0, [])
-    source.extras.missiles.append(Missile(Vec2(20.0, 30.0), Vec2(4.0, 5.0), 0, 30, 1.5))
+    source.extras.missiles.append(
+        Missile(Vec2(20.0, 30.0), Vec2(4.0, 5.0), 0, 30, 1.5, target=1, kind="bomb")
+    )
+    source.extras.apply_direct("invasor", 1, [])
     source.extras.pickups.append(Pickup(Vec2(40.0, 45.0), "shield", 50, 0, True))
     mirror = make_world()
 
@@ -294,7 +337,10 @@ def test_snapshot_preserves_spin_companion_missile_and_targeted_pickup() -> None
     assert mirror.ball.rotation == pytest.approx(1.25)
     assert mirror.ball.spin_rate == pytest.approx(-7.0)
     assert len(mirror.extras.companions) == 1
+    assert len(mirror.extras.invaders) == 1
     assert len(mirror.extras.missiles) == 1
+    assert mirror.extras.missiles[0].target == 1
+    assert mirror.extras.missiles[0].kind == "bomb"
     assert mirror.extras.pickups[0].target == 0
     assert mirror.extras.pickups[0].reduced
 

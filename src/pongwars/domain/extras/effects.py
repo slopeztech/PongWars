@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
 from pongwars.domain import constants as c
-from pongwars.domain.entities import Ball, Cat, Companion, Missile, Paddle, Rect
+from pongwars.domain.entities import Ball, Cat, Companion, Invader, Missile, Paddle, Rect
 from pongwars.domain.events import (
     BallWarped,
     BombDetonated,
@@ -178,6 +178,46 @@ class Blind(Effect):
         mods.blind = True
 
 
+@_register("ramp", "penalty")
+class Ramp(Effect):
+    """@brief Tilts the court toward the affected player and changes ball gravity."""
+
+
+@_register("invasor", "penalty")
+class Invasor(Effect):
+    """@brief Sends a slow-moving invader to harass the penalized player's paddle."""
+
+    def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Spawn an invader on the far side of the penalized player."""
+        for invader in world.extras.invaders:
+            if invader.target == player:
+                invader.ttl = self.spec.ticks
+                return
+        alternatives = opponents(world, player)
+        if not alternatives:
+            return
+        opponent = world.paddles[alternatives[0]].rect
+        inward = -1.0 if opponent.cx > c.FIELD_WIDTH / 2 else 1.0
+        anchor = Vec2(opponent.cx + inward * 18.0, c.FIELD_HEIGHT / 2)
+        world.extras.invaders.append(
+            Invader(
+                anchor,
+                player,
+                self.spec.ticks,
+                1,
+                c.INVADER_BOMBS_PER_EFFECT,
+                world.rng.uniform(0.0, math.tau),
+                anchor,
+            )
+        )
+
+    def on_expire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Remove the invader when its penalty ends or is cleansed."""
+        world.extras.invaders = [
+            invader for invader in world.extras.invaders if invader.target != player
+        ]
+
+
 @_register("stun", "status")
 class Stun(Effect):
     """@brief The paddle cannot move (laser hit)."""
@@ -226,7 +266,9 @@ class Laser(Effect):
             world.damage_obstacle(obstacle, events)
         elif victim >= 0:
             world.extras.apply("stun", victim, events)
-        events.append(LaserFired(player, ox + dx * best, oy + dy * best))
+        events.append(
+            LaserFired(player, ox + dx * best, oy + dy * best, victim if victim >= 0 else None)
+        )
 
 
 @_register("freeze", "weapon")

@@ -17,7 +17,7 @@ from pongwars.audio.synth import (
     ToneSpec,
     render_tone,
 )
-from pongwars.domain.events import Event
+from pongwars.domain.events import EffectApplied, Event
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,11 @@ class AudioPlayer:
         """
         started = 0
         for event in events:
-            name = self.bank.events.get(type(event).__name__)
+            name = (
+                "ramp"
+                if isinstance(event, EffectApplied) and event.name == "ramp"
+                else self.bank.events.get(type(event).__name__)
+            )
             if name is not None and self.play(name):
                 started += 1
         return started

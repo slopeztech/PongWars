@@ -49,6 +49,8 @@ def test_arenas_at_least_five_builtin() -> None:
         "orbital",
         "pinball",
         "portal",
+        "arkanoid",
+        "gravity",
     ],
 )
 def test_arenas_builtin_fair_and_open(name: str) -> None:
@@ -58,9 +60,154 @@ def test_arenas_builtin_fair_and_open(name: str) -> None:
     World(MatchConfig(arena=name))
 
 
-@pytest.mark.parametrize("name", ["monolith", "orbital", "pinball", "portal"])
+@pytest.mark.parametrize(
+    "name", ["monolith", "orbital", "pinball", "portal", "arkanoid", "gravity"]
+)
 def test_new_arenas_are_two_player(name: str) -> None:
     assert get_arena(name).players == 2
+
+
+def test_arena_serve_configuration_controls_position_and_speed() -> None:
+    gravity = World(MatchConfig(arena="gravity", seed=1))
+    classic = World(MatchConfig(arena="classic", seed=1))
+    gravity.phase = Phase.SERVING
+    events: list[Event] = []
+    center = Vec2(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2)
+
+    assert gravity.ball.pos == Vec2(80.0, 3.0)
+    start_radius = (gravity.ball.pos - center).length()
+    assert start_radius >= c.GRAVITY_WELL_RADIUS
+    assert classic.ball.pos == center
+    gravity._serve(events)
+
+    assert gravity.ball.vel.length() == pytest.approx(105.0)
+    for _ in range(12):
+        gravity.step(FrameInputs())
+    assert (gravity.ball.pos - center).length() > start_radius
+
+
+@pytest.mark.parametrize(
+    "serve", [{"x": -1}, {"y": c.FIELD_HEIGHT + 1}, {"speed": 0}, {"speed": c.BALL_MAX_SPEED + 1}]
+)
+def test_arena_rejects_invalid_serve_configuration(serve: dict[str, float]) -> None:
+    with pytest.raises(ArenaError) as err:
+        parse_arena({"id": "test", "theme": "retro", "serve": serve})
+
+    assert err.value.key == "error.arena.invalid_value"
+
+
+def test_gravity_arena_pulls_more_strongly_near_the_center() -> None:
+    close = World(MatchConfig(arena="gravity"))
+    far = World(MatchConfig(arena="gravity"))
+    close.ball.pos = Vec2(90.0, c.FIELD_HEIGHT / 2)
+    far.ball.pos = Vec2(120.0, c.FIELD_HEIGHT / 2)
+    close.ball.vel = far.ball.vel = Vec2(0.0, 80.0)
+
+    close._apply_arena_gravity(close.ball)
+    far._apply_arena_gravity(far.ball)
+
+    assert close.ball.vel.x < far.ball.vel.x
+    assert close.ball.vel.y == pytest.approx(far.ball.vel.y)
+
+
+def test_gravity_arena_accelerates_ball_outward_from_the_well() -> None:
+    world = World(MatchConfig(arena="gravity"))
+    world.ball.pos = Vec2(c.FIELD_WIDTH / 2 + 10.0, c.FIELD_HEIGHT / 2)
+    world.ball.vel = Vec2(80.0, 0.0)
+
+    world._apply_arena_gravity(world.ball)
+
+    assert world.ball.vel.x > 80.0
+
+
+def test_gravity_is_disabled_in_other_arenas() -> None:
+    world = World(MatchConfig(arena="classic"))
+    world.ball.vel = Vec2(0.0, 80.0)
+
+    world._apply_arena_gravity(world.ball)
+
+    assert world.ball.vel == Vec2(0.0, 80.0)
+
+
+def test_arkanoid_generates_seeded_centered_clusters_each_round() -> None:
+    first = World(MatchConfig(arena="arkanoid", seed=20))
+    same_seed = World(MatchConfig(arena="arkanoid", seed=20))
+    other_seed = World(MatchConfig(arena="arkanoid", seed=21))
+
+    assert 2 <= len(first.obstacles) <= 16
+    assert [(o.rect.cx, o.rect.cy) for o in first.obstacles] == [
+        (o.rect.cx, o.rect.cy) for o in same_seed.obstacles
+    ]
+    assert [(o.rect.cx, o.rect.cy) for o in first.obstacles] != [
+        (o.rect.cx, o.rect.cy) for o in other_seed.obstacles
+    ]
+    assert all(o.kind == "destructible" and o.hp == 1 for o in first.obstacles)
+    assert all(50.0 <= o.rect.cx <= 110.0 for o in first.obstacles)
+    assert all(20.0 <= o.rect.cy <= 70.0 for o in first.obstacles)
+
+
+def test_arkanoid_ball_hit_removes_block() -> None:
+    world = World(MatchConfig(arena="arkanoid", seed=20))
+    obstacle = world.obstacles[0]
+    world.ball.pos = Vec2(
+        obstacle.rect.cx - obstacle.rect.half_w - world.ball.radius - 0.5,
+        obstacle.rect.cy,
+    )
+    world.ball.vel = Vec2(80.0, 0.0)
+    events: list[Event] = []
+
+    world._move_ball(world.ball, events)
+
+    assert any(isinstance(event, WallHit) for event in events)
+    assert not obstacle.active
+
+
+@pytest.mark.parametrize("weapon", ["laser", "missile"])
+def test_arkanoid_weapons_destroy_blocks(weapon: str) -> None:
+    from pongwars.domain.entities import Missile
+
+    world = World(MatchConfig(arena="arkanoid", seed=20, extras=("all",)))
+    obstacle = world.obstacles[0]
+    active_before = sum(block.active for block in world.obstacles)
+    events: list[Event] = []
+    if weapon == "laser":
+        world.paddles[0].rect.cy = obstacle.rect.cy
+        world.extras.weapons[0] = ("laser", 1)
+        world.extras.fire(0, events)
+    else:
+        world.extras.missiles.append(
+            Missile(
+                Vec2(obstacle.rect.cx - obstacle.rect.half_w - 2.0, obstacle.rect.cy),
+                Vec2(80.0, 0.0),
+                0,
+                10,
+                1.5,
+            )
+        )
+        for _ in range(10):
+            world.extras.update_missiles(events)
+            if not world.extras.missiles:
+                break
+
+    assert sum(block.active for block in world.obstacles) == active_before - 1
+
+
+def test_arkanoid_regenerates_blocks_after_each_round() -> None:
+    world = World(MatchConfig(arena="arkanoid", seed=20))
+    previous = world.obstacles
+    for index in range(len(previous)):
+        world.destroy_obstacle(index, [])
+
+    world.ball.pos = Vec2(-world.ball.radius - 1.0, c.FIELD_HEIGHT / 2)
+    world._check_goal(world.ball, [])
+
+    assert world.phase is Phase.SERVING
+    assert 2 <= len(world.obstacles) <= 16
+    assert all(block.active and block.hp == 1 for block in world.obstacles)
+    assert all(
+        not any(block is previous_block for previous_block in previous)
+        for block in world.obstacles
+    )
 
 
 def test_orbital_arena_obstacles_follow_circular_paths() -> None:
@@ -93,24 +240,88 @@ def test_portal_positions_are_seeded_and_separated() -> None:
     assert (first.portals[1] - first.portals[0]).length() >= c.PORTAL_MIN_SEPARATION
 
 
-def test_ball_teleports_through_portal_preserving_direction_and_reducing_speed() -> None:
+def test_ball_teleports_through_portal_preserving_trajectory_and_speed() -> None:
     world = World(MatchConfig(arena="portal", seed=20))
     entry, exit = world.portals
+    previous = world.portals
     world.ball.pos = Vec2(
         entry.x - c.PORTAL_RADIUS - world.ball.radius - 0.5,
         entry.y,
     )
-    world.ball.vel = Vec2(80.0, 0.0)
+    original_velocity = Vec2(80.0, 12.0)
+    world.ball.vel = original_velocity
     events: list[Event] = []
 
     world._move_ball(world.ball, events)
 
     assert any(isinstance(event, BallWarped) for event in events)
-    assert world.ball.vel.x > 0
-    assert world.ball.vel.y == pytest.approx(0)
-    assert world.ball.vel.length() == pytest.approx(80.0 * c.PORTAL_SPEED_FACTOR)
+    assert world.ball.vel == original_velocity
+    assert world.ball.vel.length() == pytest.approx(original_velocity.length())
     assert world.ball.pos.x > exit.x + c.PORTAL_RADIUS + world.ball.radius
-    assert world.ball.pos.y == pytest.approx(exit.y)
+    assert world.ball.pos.y > exit.y
+    assert all(
+        (portal - old_portal).length() >= c.PORTAL_RADIUS * 2 + c.BALL_RADIUS
+        for portal in world.portals
+        for old_portal in previous
+    )
+    assert all(
+        (portal - world.ball.pos).length() >= c.PORTAL_RADIUS * 2 + c.BALL_RADIUS
+        for portal in world.portals
+    )
+
+    previous = world.portals
+    entry, _ = world.portals
+    world.ball.pos = Vec2(
+        entry.x - c.PORTAL_RADIUS - world.ball.radius - 0.5,
+        entry.y,
+    )
+    original_velocity = Vec2(80.0, 12.0)
+    world.ball.vel = original_velocity
+    world._move_ball(world.ball, [])
+
+    assert world.ball.vel == original_velocity
+    assert all(
+        (portal - old_portal).length() >= c.PORTAL_RADIUS * 2 + c.BALL_RADIUS
+        for portal in world.portals
+        for old_portal in previous
+    )
+
+
+def test_fortress_obstacles_are_restored_after_each_round() -> None:
+    world = World(MatchConfig(arena="fortress", seed=20))
+    initial_count = len(world.obstacles)
+    for index, _obstacle in enumerate(world.obstacles):
+        world.destroy_obstacle(index, [])
+
+    world.ball.pos = Vec2(-world.ball.radius - 1.0, c.FIELD_HEIGHT / 2)
+    world._check_goal(world.ball, [])
+
+    assert world.phase is Phase.SERVING
+    assert len(world.obstacles) == initial_count
+    assert all(obstacle.active for obstacle in world.obstacles)
+    assert all(obstacle.hp > 0 for obstacle in world.obstacles)
+
+
+def test_monolith_rotates_ninety_degrees_after_each_hit() -> None:
+    world = World(MatchConfig(arena="monolith", seed=20))
+    obstacle = world.obstacles[0]
+    initial_size = (obstacle.rect.half_w, obstacle.rect.half_h)
+    events = _fire(world, obstacle.rect.cx)
+
+    assert any(isinstance(event, WallHit) for event in events)
+    assert (obstacle.rect.half_w, obstacle.rect.half_h) == (initial_size[1], initial_size[0])
+    assert world.ball.vel.x < 0.0
+
+    world.ball.pos = Vec2(obstacle.rect.cx, obstacle.rect.cy - obstacle.rect.half_h - 10.0)
+    world.ball.vel = Vec2(0.0, 80.0)
+    events = []
+    for _ in range(20):
+        world._move_ball(world.ball, events)
+        if any(isinstance(event, WallHit) for event in events):
+            break
+
+    assert any(isinstance(event, WallHit) for event in events)
+    assert (obstacle.rect.half_w, obstacle.rect.half_h) == initial_size
 
 
 def test_arenas_unknown_raises() -> None:

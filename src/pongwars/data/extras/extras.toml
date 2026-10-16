@@ -137,3 +137,14 @@ weight = 3
 category = "penalty"
 duration = 8.0
 weight = 2
+
+[ramp]
+category = "penalty"
+duration = 8.0
+magnitude = 0.17
+weight = 2
+
+[invasor]
+category = "penalty"
+duration = 8.0
+weight = 2

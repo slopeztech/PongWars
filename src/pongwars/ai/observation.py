@@ -51,6 +51,7 @@ class Observation:
     jammed: bool = False
     holding: bool = False
     foes: tuple[Rect, ...] = ()
+    inverted: bool = False
 
     @property
     def paddle_pos(self) -> float:
@@ -97,4 +98,5 @@ class Observation:
             jammed=world.extras.mods(seat).jammed,
             holding=any(b.held_by == seat for b in world.balls),
             foes=foes,
+            inverted=any(effect.name == "inverted" for effect in world.extras.active[seat]),
         )

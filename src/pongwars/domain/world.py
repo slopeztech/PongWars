@@ -66,6 +66,7 @@ class World:
         """
         self.config = config
         arena = get_arena(config.arena)
+        self.arena = arena
         if len(config.controllers) != arena.players:
             raise ConfigError(
                 "error.config.player_count_mismatch",
@@ -75,12 +76,17 @@ class World:
         self.players = arena.players
         self.mode = create_mode(config)
         self.rng = RandomSource(config.seed)
-        self.obstacles = arena.build_obstacles() if obstacles is None else obstacles
+        self.obstacles = (
+            self._make_arkanoid_blocks()
+            if obstacles is None and config.arena == "arkanoid"
+            else arena.build_obstacles()
+            if obstacles is None
+            else obstacles
+        )
         self.portals = self._make_portals()
         self.paddles = _make_paddles(self.players)
         self.alive = [True] * self.players
-        mid = c.FIELD_HEIGHT / 2
-        self.ball = Ball(Vec2(c.FIELD_WIDTH / 2, mid), Vec2(), c.BALL_RADIUS)
+        self.ball = Ball(arena.serve.position, Vec2(), c.BALL_RADIUS)
         self.extra_balls: list[Ball] = []
         self.scores = [0] * self.players
         self.extras = ExtrasManager(self)
@@ -129,12 +135,15 @@ class World:
             if self._serve_timer <= 0:
                 self._serve(events)
         else:
+            self._apply_ramp_gravity()
             self._update_held()
             self.extras.update_companions()
+            self.extras.update_invaders()
             for ball in self.balls:
                 if self.phase is Phase.PLAYING and ball.held_by is None:
                     ball.rotation = (ball.rotation + ball.spin_rate * c.DT) % (2.0 * math.pi)
                     self._curve_ball(ball)
+                    self._apply_arena_gravity(ball)
                     self._move_ball(ball, events)
             if self.phase is Phase.PLAYING:
                 self.extras.update_pickups(events)
@@ -147,6 +156,81 @@ class World:
             self.winner = winner
             events.append(MatchEnded(winner))
         return events
+
+    @property
+    def ramp_incline(self) -> float:
+        """@brief Current signed court angle in radians, smoothed at both ends of its lifetime."""
+        if self.players != MIN_PLAYERS:
+            return 0.0
+        transition = max(1, round(c.RAMP_TRANSITION_SECONDS * c.TICK_RATE))
+        angle = 0.0
+        for seat, effects in enumerate(self.extras.active):
+            direction = 1.0 if seat == SEAT_LEFT else -1.0
+            for effect in effects:
+                if effect.name != "ramp":
+                    continue
+                elapsed = effect.spec.ticks - effect.remaining
+                ramp_up = _smoothstep(elapsed / transition)
+                ramp_down = _smoothstep(effect.remaining / transition)
+                angle += direction * effect.spec.magnitude * min(ramp_up, ramp_down)
+        return angle
+
+    def _apply_ramp_gravity(self) -> None:
+        incline = self.ramp_incline
+        if incline == 0.0:
+            return
+        acceleration = -math.tan(incline) * c.RAMP_GRAVITY
+        for ball in self.balls:
+            if ball.held_by is not None:
+                continue
+            ball.vel = ball.vel + Vec2(acceleration * c.DT, 0.0)
+            speed = ball.vel.length()
+            if speed > c.BALL_MAX_SPEED:
+                ball.vel = ball.vel * (c.BALL_MAX_SPEED / speed)
+
+    def _apply_arena_gravity(self, ball: Ball) -> None:
+        if self.config.arena != "gravity":
+            return
+        toward_center = Vec2(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2) - ball.pos
+        distance = toward_center.length()
+        if distance == 0.0:
+            return
+        acceleration = c.GRAVITY_WELL_ACCELERATION * math.exp(
+            -distance / c.GRAVITY_WELL_RADIUS
+        )
+        ball.vel = ball.vel + toward_center * (acceleration * c.DT / distance)
+        radial_direction = toward_center * (-1.0 / distance)
+        outward_speed = ball.vel.x * radial_direction.x + ball.vel.y * radial_direction.y
+        if outward_speed > 0.0 and distance < c.GRAVITY_WELL_RADIUS:
+            depth = 1.0 - distance / c.GRAVITY_WELL_RADIUS
+            exit_acceleration = c.GRAVITY_WELL_EXIT_ACCELERATION * depth * depth
+            ball.vel = ball.vel + radial_direction * (exit_acceleration * c.DT)
+        speed = ball.vel.length()
+        if speed > c.BALL_MAX_SPEED:
+            ball.vel = ball.vel * (c.BALL_MAX_SPEED / speed)
+
+    def _make_arkanoid_blocks(self) -> list[Obstacle]:
+        """@brief Generate a seeded, centered cluster of one-hit blocks for an Arkanoid round."""
+        count = self.rng.randint(2, 16)
+        center_x = self.rng.uniform(70.0, 90.0)
+        center_y = self.rng.uniform(36.0, 54.0)
+        cells = list(range(16))
+        selected: list[int] = []
+        for _ in range(count):
+            selected.append(cells.pop(self.rng.randint(0, len(cells) - 1)))
+        return [
+            Obstacle(
+                Rect(
+                    center_x + (cell % 4 - 1.5) * 8.0,
+                    center_y + (cell // 4 - 1.5) * 7.0,
+                    3.0,
+                    2.5,
+                ),
+                "destructible",
+                hp=1,
+            )
+            for cell in selected
+        ]
 
     @property
     def balls(self) -> list[Ball]:
@@ -284,7 +368,7 @@ class World:
             heading = Vec2(direction * math.cos(angle), math.sin(angle))
         else:
             heading = Vec2(math.sin(angle), direction * math.cos(angle))
-        self.ball.vel = heading * c.BALL_START_SPEED
+        self.ball.vel = heading * self.arena.serve.speed
         self.phase = Phase.PLAYING
         self._countdown_enabled = False
         events.append(Served())
@@ -347,7 +431,8 @@ class World:
                     ball.pos = destination + direction * (
                         c.PORTAL_RADIUS + ball.radius + c.PORTAL_EXIT_CLEARANCE
                     )
-                    ball.vel = ball.vel * c.PORTAL_SPEED_FACTOR
+                previous_portals = self.portals
+                self.portals = self._make_portals(previous_portals, (ball.pos,))
                 events.append(BallWarped(ball.pos.x, ball.pos.y))
                 time_left *= 1.0 - portal_t
                 continue
@@ -388,11 +473,39 @@ class World:
         self._bounce_borders(ball, events)
         self._check_goal(ball, events)
 
-    def _make_portals(self) -> tuple[Vec2, ...]:
-        """@brief Pick a reproducible, unobstructed portal pair for the Portal arena."""
+    def _make_portals(
+        self,
+        previous: tuple[Vec2, ...] = (),
+        avoid: tuple[Vec2, ...] = (),
+    ) -> tuple[Vec2, ...]:
+        """@brief Pick an unobstructed portal pair, distinct from recently used positions."""
         if self.config.arena != "portal":
             return ()
         serve_point = Vec2(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2)
+        change_clearance = c.PORTAL_RADIUS * 2 + c.BALL_RADIUS
+        avoid_positions = (*previous, *avoid)
+
+        def valid_pair(entry: Vec2, exit: Vec2) -> bool:
+            if (exit - entry).length() < c.PORTAL_MIN_SEPARATION:
+                return False
+            for portal in (entry, exit):
+                if (portal - serve_point).length() <= c.PORTAL_RADIUS + c.BALL_RADIUS:
+                    return False
+                if any(
+                    (portal - point).length() < change_clearance for point in avoid_positions
+                ):
+                    return False
+                if any(
+                    abs(portal.x - obstacle.rect.cx)
+                    <= obstacle.rect.half_w + c.PORTAL_RADIUS
+                    and abs(portal.y - obstacle.rect.cy)
+                    <= obstacle.rect.half_h + c.PORTAL_RADIUS
+                    for obstacle in self.obstacles
+                    if obstacle.active
+                ):
+                    return False
+            return True
+
         for _ in range(100):
             entry = Vec2(
                 self.rng.uniform(c.PORTAL_MARGIN_X, c.FIELD_WIDTH - c.PORTAL_MARGIN_X),
@@ -402,26 +515,19 @@ class World:
                 self.rng.uniform(c.PORTAL_MARGIN_X, c.FIELD_WIDTH - c.PORTAL_MARGIN_X),
                 self.rng.uniform(c.PORTAL_MARGIN_Y, c.FIELD_HEIGHT - c.PORTAL_MARGIN_Y),
             )
-            if (exit - entry).length() < c.PORTAL_MIN_SEPARATION:
-                continue
-            if any(
-                (portal - serve_point).length() <= c.PORTAL_RADIUS + c.BALL_RADIUS
-                for portal in (entry, exit)
-            ):
-                continue
-            if any(
-                abs(portal.x - obstacle.rect.cx) <= obstacle.rect.half_w + c.PORTAL_RADIUS
-                and abs(portal.y - obstacle.rect.cy) <= obstacle.rect.half_h + c.PORTAL_RADIUS
-                for portal in (entry, exit)
-                for obstacle in self.obstacles
-                if obstacle.active
-            ):
-                continue
-            return (entry, exit)
-        return (
-            Vec2(c.FIELD_WIDTH * 0.25, c.FIELD_HEIGHT * 0.25),
-            Vec2(c.FIELD_WIDTH * 0.75, c.FIELD_HEIGHT * 0.75),
-        )
+            if valid_pair(entry, exit):
+                return entry, exit
+
+        coordinates = [
+            Vec2(float(x), float(y))
+            for x in range(int(c.PORTAL_MARGIN_X), int(c.FIELD_WIDTH - c.PORTAL_MARGIN_X) + 1, 8)
+            for y in range(int(c.PORTAL_MARGIN_Y), int(c.FIELD_HEIGHT - c.PORTAL_MARGIN_Y) + 1, 8)
+        ]
+        for entry in coordinates:
+            for exit in coordinates:
+                if valid_pair(entry, exit):
+                    return entry, exit
+        raise RuntimeError("Unable to find a valid portal pair for the current arena state")
 
     def _obstacle_hit(self, ball: Ball, index: int, events: list[Event]) -> None:
         obstacle = self.obstacles[index]
@@ -433,6 +539,36 @@ class World:
             events.append(BumperHit(index))
             return
         events.append(WallHit())
+        if self.config.arena == "monolith":
+            obstacle.rect.half_w, obstacle.rect.half_h = (
+                obstacle.rect.half_h,
+                obstacle.rect.half_w,
+            )
+            rect = obstacle.rect
+            closest_x = min(max(ball.pos.x, rect.cx - rect.half_w), rect.cx + rect.half_w)
+            closest_y = min(max(ball.pos.y, rect.cy - rect.half_h), rect.cy + rect.half_h)
+            offset = Vec2(ball.pos.x - closest_x, ball.pos.y - closest_y)
+            distance = offset.length()
+            if distance < ball.radius:
+                clearance = ball.radius - distance + 1e-6
+                if distance > 0.0:
+                    ball.pos = ball.pos + offset * (clearance / distance)
+                else:
+                    edges = (
+                        (ball.pos.x - (rect.cx - rect.half_w - ball.radius), "left"),
+                        (rect.cx + rect.half_w + ball.radius - ball.pos.x, "right"),
+                        (ball.pos.y - (rect.cy - rect.half_h - ball.radius), "top"),
+                        (rect.cy + rect.half_h + ball.radius - ball.pos.y, "bottom"),
+                    )
+                    _, side = min(edges)
+                    if side == "left":
+                        ball.pos = Vec2(rect.cx - rect.half_w - ball.radius - 1e-6, ball.pos.y)
+                    elif side == "right":
+                        ball.pos = Vec2(rect.cx + rect.half_w + ball.radius + 1e-6, ball.pos.y)
+                    elif side == "top":
+                        ball.pos = Vec2(ball.pos.x, rect.cy - rect.half_h - ball.radius - 1e-6)
+                    else:
+                        ball.pos = Vec2(ball.pos.x, rect.cy + rect.half_h + ball.radius + 1e-6)
         self.damage_obstacle(index, events)
 
     def _paddle_bounce(
@@ -440,6 +576,12 @@ class World:
     ) -> bool:
         paddle = paddle or self.paddles[index]
         rect = paddle.rect
+        headbutt_hit = paddle is self.paddles[index] and paddle.headbutt_ticks > 0
+        if headbutt_hit:
+            if paddle.axis == "y":
+                normal = Vec2(1.0 if index == SEAT_LEFT else -1.0, 0.0)
+            else:
+                normal = Vec2(0.0, 1.0 if index == SEAT_TOP else -1.0)
         movement = self._paddle_moves[index] if paddle is self.paddles[index] else 0.0
         spin = self._spin_pressed[index] and abs(movement) > 0.05
         spin_sign = (1.0 if movement > 0 else -1.0) if spin else 0.0
@@ -551,7 +693,15 @@ class World:
             return
         self.extra_balls.clear()
         self.extras.cats.clear()
-        self.ball = Ball(Vec2(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2), Vec2(), c.BALL_RADIUS)
+        if self.config.arena == "fortress":
+            self.obstacles = get_arena("fortress").build_obstacles()
+        elif self.config.arena == "arkanoid":
+            self.obstacles = self._make_arkanoid_blocks()
+        self.ball = Ball(
+            self.arena.serve.position,
+            Vec2(),
+            c.BALL_RADIUS,
+        )
         self.phase = Phase.SERVING
         self._serve_timer = c.SERVE_DELAY_TICKS
         for step in range(self.players):
@@ -572,3 +722,8 @@ def _make_paddles(players: int) -> list[Paddle]:
         Paddle(Rect(mid_x, c.FIELD_HEIGHT - c.PADDLE_MARGIN, long_side, short_side), axis="x"),
     ]
     return seats[:players]
+
+
+def _smoothstep(value: float) -> float:
+    value = max(0.0, min(1.0, value))
+    return value * value * (3.0 - 2.0 * value)

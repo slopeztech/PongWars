@@ -1,0 +1,8 @@
+id = "gravity"
+theme = "retro"
+players = 2
+
+[serve]
+x = 80
+y = 3
+speed = 105

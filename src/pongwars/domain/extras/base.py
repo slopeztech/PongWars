@@ -90,6 +90,13 @@ class Effect:
         @param events Event list to append to.
         """
 
+    def on_expire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Called when the effect ends or is removed.
+        @param world Match being played.
+        @param player Seat whose effect ended.
+        @param events Event list to append to.
+        """
+
     def fire(self, world: "World", player: int, events: list[Event]) -> None:
         """@brief Weapon action; only meaningful for the weapon category.
         @param world Match being played.

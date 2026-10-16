@@ -18,8 +18,8 @@ The target score, time limit, and number of lives can be adjusted in match setup
 
 ## Arenas
 
-There are eleven arenas. **Classic** through **Portal** are for two players;
-**Trident** is for three and **Crossfire** is for four.
+There are thirteen arenas. All except **Trident** (three players) and **Crossfire**
+(four players) are for two players.
 
 | Arena | What to expect |
 |-------|----------------|
@@ -31,7 +31,9 @@ There are eleven arenas. **Classic** through **Portal** are for two players;
 | **Monolith** | A fixed solid barrier splits the middle of the court. |
 | **Orbital** | Two orbiting bumpers move around the court and deflect the ball. |
 | **Pinball** | Two bumpers create a pinball-style court. |
-| **Portal** | A pair of portals moves the ball to the other side while preserving its direction and reducing its speed. |
+| **Portal** | A pair of portals moves the ball to a new position while preserving its trajectory and speed. Both portals relocate after every crossing. |
+| **Arkanoid** | A centered cluster of 2–16 random blocks appears each round. Every ball hit removes a block; lasers and missiles can clear them too. |
+| **Gravity** | A sunken center attracts the ball more strongly the closer it passes, bending its trajectory. The ball serves from the outer part of the court with extra speed. |
 | **Trident** | A three-player court with a central solid obstacle. |
 | **Crossfire** | A four-player court with a central solid obstacle. |
 
@@ -78,6 +80,8 @@ Collect a weapon, then press your **Use weapon** key to fire it.
 | **Inverted controls** | Reverses your paddle controls. |
 | **Slow paddle** | Temporarily reduces your paddle's movement speed. |
 | **Blind** | Obscures your view of the court. |
+| **Ramp** | Tilts the court toward the penalized player, speeding the ball downhill and slowing it uphill. Only appears in 1-vs-1 arenas. |
+| **Invader** | A slow-moving alien appears across the court and launches up to five slow bombs at the penalized player. |
 | **Turbo ball** | Speeds all balls up. |
 | **Dizzy controls** | Makes your paddle sway on its own. |
 | **Weapon jam** | Prevents you from firing your weapon. |

@@ -37,6 +37,8 @@ class Camera:
         height: float = DEFAULT_HEIGHT,
         focal: float = DEFAULT_FOCAL,
         quarter_turns: int = 0,
+        incline: float = 0.0,
+        gravity_well: bool = False,
     ) -> None:
         """@brief Create a camera.
         @param screen_w Target surface width in pixels.
@@ -45,6 +47,8 @@ class Camera:
         @param height Camera height above the table.
         @param focal Focal length in pixels.
         @param quarter_turns Rotation of the table about its centre, in 90-degree steps.
+        @param incline Signed table slope along the x axis, in radians.
+        @param gravity_well Whether to project the table as a curved gravitational well.
         """
         self.cx = screen_w / 2
         self.cy = screen_h / 2
@@ -52,6 +56,19 @@ class Camera:
         self._pitch = math.atan2(height, back)
         self._cam = (0.0, back, height)
         self._turns = quarter_turns % QUARTER_TURNS
+        self._incline = incline
+        self._gravity_well = gravity_well
+
+    @staticmethod
+    def _surface_height(x: float, y: float) -> float:
+        dx = x - c.FIELD_WIDTH / 2
+        dy = y - c.FIELD_HEIGHT / 2
+        distance = math.hypot(dx, dy)
+        if distance >= c.GRAVITY_WELL_RADIUS:
+            return 0.0
+        radius_fraction = distance / c.GRAVITY_WELL_RADIUS
+        depth_fraction = 1.0 - radius_fraction * radius_fraction
+        return -c.GRAVITY_WELL_DEPTH * depth_fraction * depth_fraction
 
     def project(self, x: float, y: float, z: float = 0.0) -> Projection:
         """@brief Project a table-space point.
@@ -63,7 +80,10 @@ class Camera:
         px, py = self.rotate(x - c.FIELD_WIDTH / 2, y - c.FIELD_HEIGHT / 2)
         px -= self._cam[0]
         py -= self._cam[1]
-        pz = z - self._cam[2]
+        table_height = math.tan(self._incline) * (x - c.FIELD_WIDTH / 2)
+        if self._gravity_well:
+            table_height += self._surface_height(x, y)
+        pz = z + table_height - self._cam[2]
         sin_p, cos_p = math.sin(self._pitch), math.cos(self._pitch)
         depth = -py * cos_p - pz * sin_p
         up = -py * sin_p + pz * cos_p
@@ -78,6 +98,12 @@ class Camera:
         """
         for _ in range(self._turns):
             dx, dy = -dy, dx
+        return dx, dy
+
+    def unrotate(self, dx: float, dy: float) -> tuple[float, float]:
+        """@brief Convert a camera-oriented direction back to table coordinates."""
+        for _ in range(self._turns):
+            dx, dy = dy, -dx
         return dx, dy
 
     def depth(self, y: float) -> float:

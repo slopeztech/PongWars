@@ -109,6 +109,7 @@ class LaserFired(Event):
     player: int
     x: float
     y: float
+    target: int | None = None
 
 
 @dataclass(frozen=True)

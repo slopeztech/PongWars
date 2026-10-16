@@ -50,6 +50,32 @@ def test_camera_center_projects_to_screen_center() -> None:
     assert (p.sx, p.sy) == pytest.approx((160, 90))
 
 
+def test_camera_projects_ramp_inclines() -> None:
+    left_downhill = Camera(320, 180, incline=0.17)
+    right_downhill = Camera(320, 180, incline=-0.17)
+
+    assert left_downhill.project(0, 45).sy > left_downhill.project(80, 45).sy
+    assert right_downhill.project(160, 45).sy > right_downhill.project(80, 45).sy
+
+
+def test_camera_projects_gravity_well_with_lower_center() -> None:
+    flat = Camera(320, 180)
+    curved = Camera(320, 180, gravity_well=True)
+
+    center = (c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2)
+    edge = (center[0] + c.GRAVITY_WELL_RADIUS, center[1])
+    assert curved.project(*center).sy > flat.project(*center).sy
+    assert curved.project(*edge).sy == pytest.approx(flat.project(*edge).sy)
+
+
+@pytest.mark.parametrize(
+    ("turns", "expected"),
+    [(0, (0.0, 1.0)), (1, (1.0, 0.0)), (2, (0.0, -1.0)), (3, (-1.0, 0.0))],
+)
+def test_camera_unrotates_directions(turns: int, expected: tuple[float, float]) -> None:
+    assert Camera(320, 180, quarter_turns=turns).unrotate(0.0, 1.0) == expected
+
+
 def test_camera_perspective_far_is_smaller_and_higher() -> None:
     cam = Camera(320, 180)
     far, near = cam.project(0, 0), cam.project(0, c.FIELD_HEIGHT)
@@ -136,7 +162,10 @@ def test_input_keymap_remap_and_conflicts() -> None:
     assert KeyMap.from_dict(keymap.to_dict()).get(0) == keymap.get(0)
 
 
-@pytest.mark.parametrize(("arena", "players"), [("classic", 2), ("trident", 3), ("crossfire", 4)])
+@pytest.mark.parametrize(
+    ("arena", "players"),
+    [("classic", 2), ("gravity", 2), ("trident", 3), ("crossfire", 4)],
+)
 def test_render_draws_every_arena(arena: str, players: int) -> None:
     config = MatchConfig(arena=arena, controllers=("human",) * players, seed=1)
     world = World(config)
@@ -151,6 +180,7 @@ def test_render_draws_every_arena(arena: str, players: int) -> None:
     assert window.get_bounding_rect().width > 0
 
 
+@pytest.mark.no_cover
 def test_render_benchmark_under_frame_budget() -> None:
     world = World(MatchConfig(arena="crossfire", controllers=("human",) * 4, seed=1))
     renderer = Renderer(RenderSettings(scale=4))

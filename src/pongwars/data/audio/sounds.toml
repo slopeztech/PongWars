@@ -159,3 +159,10 @@ from = 800
 to = 400
 duration = 0.3
 volume = 0.4
+
+[sounds.ramp]
+wave = "triangle"
+from = 160
+to = 520
+duration = 0.42
+volume = 0.55

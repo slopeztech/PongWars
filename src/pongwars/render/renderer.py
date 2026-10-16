@@ -17,6 +17,7 @@ from pongwars.domain.events import (
     BallWarped,
     BombDetonated,
     BumperHit,
+    EffectApplied,
     Event,
     Goal,
     LaserFired,
@@ -25,6 +26,7 @@ from pongwars.domain.events import (
     PickupCollected,
     WallHit,
 )
+from pongwars.domain.vec import Vec2
 from pongwars.domain.world import SEAT_LEFT, SEAT_RIGHT, SEAT_TOP, Phase, World
 from pongwars.render import palette as pal
 from pongwars.render.backgrounds import draw_background
@@ -50,7 +52,7 @@ SIDE_FACE_SHADE = 0.45
 FRONT_FACE_SHADE = 0.6
 SEAT_TURNS = {3: 0, 1: 1, 2: 2, 0: 3}
 SPLIT_COLUMNS = 2
-PICKUP_HEIGHT = 3.0
+PICKUP_HEIGHT = 5.5
 SKIN_STRIPED = 1
 SKIN_GLOW = 2
 SKIN_CAPPED = 3
@@ -68,6 +70,37 @@ CATEGORY_COLORS = {
     "weapon": pal.ORANGE,
     "penalty": pal.RED,
     "status": pal.PINK,
+}
+PICKUP_ICONS = {
+    "big_paddle": ("11111", "10001", "10101", "10001", "11111"),
+    "speed_boost": ("00100", "00110", "11111", "01100", "00100"),
+    "magnet": ("10001", "10001", "10001", "11011", "01110"),
+    "shield": ("01110", "11111", "11111", "01110", "00100"),
+    "multiball": ("10101", "00000", "00100", "00000", "10101"),
+    "slow_mo": ("01110", "10001", "10111", "10001", "01110"),
+    "laser": ("00001", "00010", "11111", "01000", "10000"),
+    "freeze": ("10101", "01110", "11111", "01110", "10101"),
+    "bomb": ("00100", "01110", "11111", "11111", "01010"),
+    "small_paddle": ("00000", "01110", "01110", "00000", "00000"),
+    "inverted": ("10101", "01110", "00100", "01110", "10101"),
+    "slow_paddle": ("11111", "10001", "10001", "10001", "11111"),
+    "blind": ("00100", "01010", "10001", "01010", "00100"),
+    "stun": ("11111", "10101", "11111", "00100", "01010"),
+    "frozen": ("00100", "10101", "01110", "10101", "00100"),
+    "aim_assist": ("00100", "00100", "11111", "00100", "00100"),
+    "cleanse": ("00011", "00110", "01100", "11000", "10000"),
+    "slow_ball": ("01110", "10001", "10101", "10001", "01110"),
+    "cat": ("10101", "11111", "10101", "01110", "01010"),
+    "hex": ("01110", "11011", "10101", "11011", "01110"),
+    "warp": ("11001", "00110", "01100", "00110", "10011"),
+    "companion": ("01110", "10101", "01110", "00100", "01110"),
+    "headbutt": ("10000", "11000", "11110", "11000", "10000"),
+    "missile": ("00100", "01110", "11111", "00100", "00100"),
+    "turbo_ball": ("00001", "00011", "10110", "11100", "01000"),
+    "drunk": ("10001", "01010", "00100", "01010", "10001"),
+    "jammed": ("11011", "01010", "00100", "01010", "11011"),
+    "ramp": ("00001", "00011", "00111", "01111", "11111"),
+    "invasor": ("00100", "10101", "11111", "01110", "01010"),
 }
 ODD_TURN_ZOOM = 1.6
 KIND_COLORS = {
@@ -151,6 +184,7 @@ class Renderer:
         self._lasers: list[tuple[Point, Point, pal.Color, int]] = []
         self.explosions: list[Explosion] = []
         self._clock = 0
+        self._ramp_incline = 0.0
         self.colors = [
             pal.PADDLE_PALETTE[i % len(pal.PADDLE_PALETTE)] for i in self.settings.paddle_colors
         ]
@@ -174,6 +208,9 @@ class Renderer:
                     )
                 )
                 self._burst(event.x, event.y, pal.ORANGE, 6)
+                if event.target is not None:
+                    self.explosions.append(Explosion(event.x, event.y))
+                    self._burst(event.x, event.y, pal.YELLOW, 16)
             elif isinstance(event, BombDetonated):
                 self.explosions.append(Explosion(event.x, event.y))
                 self._burst(event.x, event.y, pal.YELLOW, 28)
@@ -181,8 +218,15 @@ class Renderer:
                 self._burst(event.x, event.y, pal.UI_CYAN, 12)
             elif isinstance(event, PickupCollected):
                 self._burst(pos.x, pos.y, pal.LIME, 10)
+            elif isinstance(event, EffectApplied) and event.name == "ramp":
+                paddle = world.paddles[event.player].rect
+                self._burst(paddle.cx, paddle.cy, pal.ORANGE, 18)
+                self._shake(SHAKE_GOAL * 0.65)
             elif isinstance(event, MissileHit):
                 self._burst(event.x, event.y, pal.ORANGE, 8)
+                if event.target is not None:
+                    self.explosions.append(Explosion(event.x, event.y))
+                    self._burst(event.x, event.y, pal.YELLOW, 16)
             elif isinstance(event, PaddleHit):
                 color = self.colors[event.player]
                 self._burst(pos.x, pos.y, color, 8)
@@ -201,6 +245,8 @@ class Renderer:
         """
         self.particles.update(dt)
         self._clock += 1
+        blend = 1.0 - math.exp(-max(0.0, dt) / c.RAMP_VISUAL_RESPONSE)
+        self._ramp_incline += (world.ramp_incline - self._ramp_incline) * blend
         self._lasers = [(a, b, col, n - 1) for a, b, col, n in self._lasers if n > 1]
         for explosion in self.explosions:
             explosion.update(dt)
@@ -225,7 +271,7 @@ class Renderer:
         self.surface.fill(pal.BLACK)
         for view in self.viewports(world):
             self._canvas = self.surface.subsurface(view.rect)
-            self.camera = self._camera_for(view)
+            self.camera = self._camera_for(view, world)
             draw_background(self._canvas, self.settings.background, self._clock)
             self._draw_scene(world)
             self._draw_hud(world, view)
@@ -242,11 +288,11 @@ class Renderer:
         scaled = pygame.transform.scale(frame, window.get_size())
         window.blit(scaled, (offset[0] * self.settings.scale, offset[1] * self.settings.scale))
 
-    @staticmethod
-    def _camera_for(view: Viewport) -> Camera:
+    def _camera_for(self, view: Viewport, world: World | None = None) -> Camera:
         w, h = view.rect.size
+        gravity_well = world is not None and world.config.arena == "gravity"
         if view.seat is None:
-            return Camera(w, h)
+            return Camera(w, h, incline=self._ramp_incline, gravity_well=gravity_well)
         # Odd turns look along the long table axis, so pull the camera back and widen less.
         extent = (c.FIELD_WIDTH - c.FIELD_HEIGHT) / 2 if view.turns % 2 else 0.0
         focal = DEFAULT_FOCAL * w / LOW_W * (ODD_TURN_ZOOM if view.turns % 2 else 1.0)
@@ -260,6 +306,8 @@ class Renderer:
             height=DEFAULT_HEIGHT + extent,
             focal=focal,
             quarter_turns=view.turns,
+            incline=self._ramp_incline,
+            gravity_well=gravity_well,
         )
 
     def _draw_scene(self, world: World) -> None:
@@ -296,6 +344,10 @@ class Renderer:
             (self._sort(m.pos.x, m.pos.y), "missile", i)
             for i, m in enumerate(world.extras.missiles)
         ]
+        items += [
+            (self._sort(invader.pos.x, invader.pos.y), "invader", i)
+            for i, invader in enumerate(world.extras.invaders)
+        ]
         for _, kind, index in sorted(items):
             if kind == "portal":
                 self._portal(world, index)
@@ -315,6 +367,8 @@ class Renderer:
                 self._draw_paddle(ally.paddle, ally.owner)
             elif kind == "missile":
                 self._missile(world, index)
+            elif kind == "invader":
+                self._invader(world, index)
             else:
                 self._ball(world, index)
         self._draw_shields(world)
@@ -403,7 +457,22 @@ class Renderer:
 
     def _draw_table(self, world: World) -> None:
         w, h = c.FIELD_WIDTH, c.FIELD_HEIGHT
-        self._quad([(0, 0, 0), (w, 0, 0), (w, h, 0), (0, h, 0)], pal.NAVY)
+        if world.config.arena == "gravity":
+            for x0 in range(0, int(w), 10):
+                x1 = min(w, x0 + 10)
+                for y0 in range(0, int(h), 10):
+                    y1 = min(h, y0 + 10)
+                    self._quad(
+                        [
+                            (x0, y0, 0),
+                            (x1, y0, 0),
+                            (x1, y1, 0),
+                            (x0, y1, 0),
+                        ],
+                        pal.NAVY,
+                    )
+        else:
+            self._quad([(0, 0, 0), (w, 0, 0), (w, h, 0), (0, h, 0)], pal.NAVY)
         field_style = (
             self.settings.field_style
             if self.settings.field_style in FIELD_STYLES
@@ -424,12 +493,12 @@ class Renderer:
         for is_wall, y in walls:
             if is_wall:
                 self._quad([(0, y, 0), (w, y, 0), (w, y, 2), (0, y, 2)], pal.DARK_GREY)
-        mid = self.camera.project(w / 2, 0), self.camera.project(w / 2, h)
-        pygame.draw.line(
+        middle = [self.camera.project(w / 2, y, 0) for y in range(0, int(h) + 1, 5)]
+        pygame.draw.lines(
             self._canvas,
             pal.DARK_GREY,
-            (round(mid[0].sx), round(mid[0].sy)),
-            (round(mid[1].sx), round(mid[1].sy)),
+            False,
+            [(round(point.sx), round(point.sy)) for point in middle],
         )
 
     def _draw_grid(self, color: pal.Color | None = None) -> None:
@@ -439,9 +508,12 @@ class Renderer:
         for k in range(-1, int(w // GRID_STEP) + 1):
             x = k * GRID_STEP + offset
             if 0 <= x <= w:
-                a, b = self.camera.project(x, 0, 0), self.camera.project(x, h, 0)
-                pygame.draw.line(
-                    self._canvas, color, (round(a.sx), round(a.sy)), (round(b.sx), round(b.sy))
+                points = [self.camera.project(x, y, 0) for y in range(0, int(h) + 1, 5)]
+                pygame.draw.lines(
+                    self._canvas,
+                    color,
+                    False,
+                    [(round(point.sx), round(point.sy)) for point in points],
                 )
 
     def _draw_checkerboard(self) -> None:
@@ -567,31 +639,95 @@ class Renderer:
         color = CATEGORY_COLORS.get(spec.category, pal.WHITE)
         if pickup.ttl < PICKUP_BLINK_TICKS and (pickup.ttl // PICKUP_BLINK_PERIOD) % 2:
             return
-        half = c.PICKUP_RADIUS
-        self._box(Rect(pickup.pos.x, pickup.pos.y, half, half), PICKUP_HEIGHT, color)
+        bob = 0.45 + 0.45 * math.sin(self._clock / 7.0 + index)
+        ground = self.camera.project(pickup.pos.x, pickup.pos.y, 0.0)
+        glow = max(2, round((5.0 + math.sin(self._clock / 5.0) * 1.0) * ground.scale))
+        shadow = pygame.Rect(0, 0, glow * 2, max(2, glow // 2))
+        shadow.center = (round(ground.sx), round(ground.sy))
+        pygame.draw.ellipse(self._canvas, pal.shade(color, 0.35), shadow)
+        anchor = self.camera.project(
+            pickup.pos.x,
+            pickup.pos.y,
+            PICKUP_HEIGHT / 2 + bob,
+        )
+        cell = max(1, round(anchor.scale * 0.78))
+        front_w, front_h = 8 * cell, 8 * cell
+        depth = 2 * cell
+        left = round(anchor.sx - front_w / 2)
+        top = round(anchor.sy - front_h / 2)
+        right, bottom = left + front_w, top + front_h
+
+        # Pixel beams behind the crate, with gaps to keep the arcade glow crisp.
+        for offset, beam_height, beam_width in (
+            (-3, 7, 1),
+            (0, 9, 2),
+            (3, 7, 1),
+        ):
+            beam_x = round(anchor.sx) + offset * cell
+            for segment in range(3):
+                segment_top = top - depth - (segment + 1) * 2 * cell
+                if top - segment_top > beam_height * cell:
+                    continue
+                pygame.draw.rect(
+                    self._canvas,
+                    pal.shade(color, 0.62 if beam_width == 1 else 0.9),
+                    (
+                        beam_x - beam_width * cell // 2,
+                        segment_top,
+                        beam_width * cell,
+                        cell,
+                    ),
+                )
+
+        pygame.draw.polygon(
+            self._canvas,
+            pal.shade(color, 0.68),
+            [
+                (left, top),
+                (right, top),
+                (right + depth, top - depth),
+                (left + depth, top - depth),
+            ],
+        )
+        pygame.draw.polygon(
+            self._canvas,
+            pal.shade(color, 0.42),
+            [
+                (right, top),
+                (right + depth, top - depth),
+                (right + depth, bottom - depth),
+                (right, bottom),
+            ],
+        )
+        pygame.draw.rect(
+            self._canvas,
+            pal.shade(color, 0.28),
+            (left - 1, top - 1, front_w + 2, front_h + 2),
+        )
+        pygame.draw.rect(self._canvas, color, (left, top, front_w, front_h))
+        pygame.draw.rect(
+            self._canvas,
+            pal.shade(color, 0.38),
+            (left + 1, top + 1, front_w - 2, front_h - 2),
+        )
+        icon = PICKUP_ICONS[pickup.name]
+        icon_x = left + (front_w - len(icon[0]) * cell) // 2
+        icon_y = top + (front_h - len(icon) * cell) // 2
+        for row, pixels in enumerate(icon):
+            for column, pixel in enumerate(pixels):
+                if pixel == "1":
+                    pygame.draw.rect(
+                        self._canvas,
+                        pal.WHITE,
+                        (icon_x + column * cell, icon_y + row * cell, cell, cell),
+                    )
         if pickup.target is not None:
-            p = self.camera.project(pickup.pos.x, pickup.pos.y, PICKUP_HEIGHT + 1.0)
             pygame.draw.rect(
                 self._canvas,
                 self.colors[pickup.target],
-                (round(p.sx) - 2, round(p.sy) - 2, 5, 5),
+                (left - cell, top - cell, front_w + 2 * cell, front_h + 2 * cell),
                 1,
             )
-        p = self.camera.project(pickup.pos.x, pickup.pos.y, PICKUP_HEIGHT + 1.0)
-        label = self.translator.translate(f"extras.{pickup.name}.name")
-        label_width = text_width(label, SMALL_TEXT)
-        label_x = min(
-            max(round(p.sx) - label_width // 2, 0),
-            max(0, self._canvas.get_width() - label_width),
-        )
-        draw_text(
-            self._canvas,
-            label,
-            label_x,
-            round(p.sy) - LABEL_GAP,
-            pal.WHITE,
-            SMALL_TEXT,
-        )
 
     def _draw_shields(self, world: World) -> None:
         for seat in range(world.players):
@@ -726,6 +862,16 @@ class Renderer:
     def _missile(self, world: World, index: int) -> None:
         missile = world.extras.missiles[index]
         p = self.camera.project(missile.pos.x, missile.pos.y, BALL_LIFT)
+        if missile.kind == "bomb":
+            radius = max(2, round(missile.radius * p.scale))
+            pygame.draw.circle(self._canvas, pal.ORANGE, (round(p.sx), round(p.sy)), radius)
+            pygame.draw.circle(
+                self._canvas,
+                pal.YELLOW,
+                (round(p.sx), round(p.sy)),
+                max(1, radius // 2),
+            )
+            return
         length = missile.vel.length()
         if length <= 0.0:
             return
@@ -739,6 +885,71 @@ class Renderer:
             (round(nose.sx), round(nose.sy)),
             2,
         )
+
+    def _invader(self, world: World, index: int) -> None:
+        invader = world.extras.invaders[index]
+        pattern = (
+            "00111100",
+            "01111110",
+            "11011011",
+            "11111111",
+            "10100101",
+        )
+        target = world.paddles[invader.target].rect
+        facing = Vec2(target.cx - invader.pos.x, target.cy - invader.pos.y)
+        distance = facing.length()
+        if distance == 0.0:
+            facing = Vec2(-1.0 if target.cx > invader.pos.x else 1.0, 0.0)
+        else:
+            facing = facing * (1.0 / distance)
+        camera_forward = self.camera.unrotate(0.0, 1.0)
+        facing = facing * 0.62 + Vec2(*camera_forward)
+        facing_length = facing.length()
+        if facing_length > 0.0:
+            facing = facing * (1.0 / facing_length)
+        horizontal = Vec2(-facing.y, facing.x)
+        cell_w, cell_h, depth = 2.0, 1.55, 1.55
+        center = invader.pos + facing * 1.8
+        shadow = self.camera.project(invader.pos.x, invader.pos.y, 0.0)
+        pygame.draw.ellipse(
+            self._canvas,
+            pal.shade(pal.NAVY, 0.55),
+            (
+                round(shadow.sx) - max(2, round(7 * shadow.scale)),
+                round(shadow.sy) - max(1, round(2 * shadow.scale)),
+                max(4, round(14 * shadow.scale)),
+                max(2, round(4 * shadow.scale)),
+            ),
+        )
+
+        def pixel_corners(column: int, row: int, back: float = 0.0) -> list[Corner]:
+            offset = (column - 3.5) * cell_w
+            z0 = 2.5 + (4 - row) * cell_h
+            base = center + horizontal * offset - facing * back
+            next_column = base + horizontal * cell_w * 0.82
+            return [
+                (base.x, base.y, z0),
+                (next_column.x, next_column.y, z0),
+                (next_column.x, next_column.y, z0 + cell_h * 0.82),
+                (base.x, base.y, z0 + cell_h * 0.82),
+            ]
+
+        # Build dark extrusions first so every lit pixel reads as a solid voxel.
+        for row, pixels in enumerate(pattern):
+            for column, pixel in enumerate(pixels):
+                if pixel != "1":
+                    continue
+                front = pixel_corners(column, row)
+                rear = pixel_corners(column, row, depth)
+                self._quad([front[0], front[1], rear[1], rear[0]], pal.shade(pal.GREEN, 0.5))
+                self._quad([front[1], front[2], rear[2], rear[1]], pal.shade(pal.GREEN, 0.7))
+                self._quad(rear, pal.shade(pal.GREEN, 0.38))
+        for row, pixels in enumerate(pattern):
+            for column, pixel in enumerate(pixels):
+                if pixel != "1":
+                    continue
+                color = pal.WHITE if row == 2 and column in (2, 5) else pal.LIME
+                self._quad(pixel_corners(column, row), color)
 
     def _portal(self, world: World, index: int) -> None:
         portal = world.portals[index]

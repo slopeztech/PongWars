@@ -82,6 +82,28 @@ def test_skins_and_cat_render(skin: int) -> None:
         assert renderer.draw(world).get_size() == (320, 180)
 
 
+def test_ramp_animation_and_sound_are_connected(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pongwars.domain.events import EffectApplied
+
+    pygame.init()
+    world = World(MatchConfig(extras=("all",), seed=2))
+    world.extras.apply_direct("ramp", 0, [])
+    world.extras.tick_effects([])
+    renderer = Renderer()
+    renderer.update(world, 1 / 60)
+
+    assert renderer._ramp_incline > 0.0
+    audio = AudioPlayer()
+    played: list[str] = []
+    monkeypatch.setattr(audio, "play", lambda name: played.append(name) is None)
+    assert "ramp" in audio.bank.sounds
+    assert audio.handle_events([EffectApplied(0, "ramp")]) == 1
+    assert played == ["ramp"]
+    audio.close()
+    renderer.handle_events(world, [EffectApplied(0, "ramp")])
+    assert renderer.shake.amplitude > 0.0
+
+
 def test_settings_sanitise_appearance() -> None:
     s = Settings.from_dict(
         {

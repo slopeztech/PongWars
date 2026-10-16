@@ -20,6 +20,7 @@ SPIN_BASE_CHANCE = 0.1
 SPIN_SKILL_GAIN = 0.5
 SPIN_WINDOW_SECONDS = 0.35
 SPIN_MIN_MOVE = 0.05
+INVERTED_SPEED_FACTOR = 0.6
 
 
 class AIController:
@@ -54,6 +55,8 @@ class AIController:
         self._last_move = 0.0
         self._spin_window = False
         self._spin_selected = False
+        self._inverted_noise = 0.0
+        self._last_inverted: bool | None = None
 
     def fire_intent(self) -> bool:
         """@brief Fire button state for this tick (call once per tick, after `poll`).
@@ -125,21 +128,29 @@ class AIController:
         seen = self._history[0]
         vel = (seen.ball_vel.x, seen.ball_vel.y)
         self._age += 1
-        if vel != self._last_vel or self._age >= RECOMPUTE_TICKS:
+        if (
+            vel != self._last_vel
+            or now.inverted != self._last_inverted
+            or self._age >= RECOMPUTE_TICKS
+        ):
             if vel != self._last_vel:
                 limit = self.profile.aim_error
                 self._noise = self._rng.uniform(-limit, limit)
             self._last_vel = vel
+            self._last_inverted = now.inverted
             self._age = 0
             self._target = self._strategy(seen, self.profile)
+            self._inverted_noise = (
+                self._rng.uniform(-now.paddle_half, now.paddle_half) if now.inverted else 0.0
+            )
         if self._target is None:
             self._last_move = 0.0
             return 0.0
-        error = self._target + self._noise - now.paddle_pos
+        error = self._target + self._noise + self._inverted_noise - now.paddle_pos
         if abs(error) < now.paddle_half * DEAD_ZONE_FRACTION:
             self._last_move = 0.0
             return 0.0
         wanted = error / (c.PADDLE_SPEED * c.DT)
-        cap = self.profile.speed
+        cap = self.profile.speed * (INVERTED_SPEED_FACTOR if now.inverted else 1.0)
         self._last_move = max(-cap, min(cap, wanted))
-        return self._last_move
+        return -self._last_move if now.inverted else self._last_move

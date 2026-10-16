@@ -92,6 +92,30 @@ class ObstacleSpec:
 
 
 @dataclass(frozen=True)
+class ServeSpec:
+    """@brief Ball placement and speed when a round begins."""
+
+    x: float = c.FIELD_WIDTH / 2
+    y: float = c.FIELD_HEIGHT / 2
+    speed: float = c.BALL_START_SPEED
+
+    @property
+    def position(self) -> Vec2:
+        """@brief Serve position as a table-space vector."""
+        return Vec2(self.x, self.y)
+
+    def validate(self) -> str | None:
+        """@brief Return a problem key if the serve configuration is invalid."""
+        if (
+            not c.BALL_RADIUS <= self.x <= c.FIELD_WIDTH - c.BALL_RADIUS
+            or not c.BALL_RADIUS <= self.y <= c.FIELD_HEIGHT - c.BALL_RADIUS
+            or not 0.0 < self.speed <= c.BALL_MAX_SPEED
+        ):
+            return "error.arena.invalid_value"
+        return None
+
+
+@dataclass(frozen=True)
 class ArenaSpec:
     """@brief A named arena: translation key, visual theme and obstacle layout."""
 
@@ -100,6 +124,7 @@ class ArenaSpec:
     theme: str
     obstacles: tuple[ObstacleSpec, ...] = ()
     players: int = 2
+    serve: ServeSpec = ServeSpec()
 
     def build_obstacles(self) -> list[Obstacle]:
         """@brief Fresh runtime obstacles for a new match."""

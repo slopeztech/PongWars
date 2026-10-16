@@ -102,13 +102,28 @@ class Companion:
 
 @dataclass
 class Missile:
-    """@brief Projectile that stuns opponents and damages destructible obstacles."""
+    """@brief Projectile that hits paddles and can damage destructible obstacles."""
 
     pos: Vec2
     vel: Vec2
     owner: int
     ttl: int
     radius: float
+    target: int | None = None
+    kind: str = "missile"
+
+
+@dataclass
+class Invader:
+    """@brief Wandering penalty NPC that launches a limited number of bombs."""
+
+    pos: Vec2
+    target: int
+    ttl: int
+    fire_timer: int
+    bombs_left: int
+    phase: float
+    anchor: Vec2
 
 
 @dataclass
