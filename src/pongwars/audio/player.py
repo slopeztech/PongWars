@@ -145,14 +145,23 @@ class AudioPlayer:
                 started += 1
         return started
 
-    def start_music(self, context: str = "menu", first: str | None = None, seed: int = 0) -> None:
+    def start_music(
+        self,
+        context: str = "menu",
+        first: str | None = None,
+        seed: int | None = None,
+        avoid_previous: str = "",
+    ) -> str:
         """@brief Play the songs of a context back to back (no-op if already playing it).
         @param context `menu` or `match`.
         @param first Song id to start with (an unknown id is ignored).
-        @param seed Shuffle seed for the rest of the playlist.
+        @param seed Optional deterministic seed for the playlist.
+        @param avoid_previous Song id to exclude from the random first pick.
+        @return The selected first song id, or an empty string when music is unavailable.
         """
         if self.jukebox is not None:
-            self.jukebox.start(context, first, seed)
+            return self.jukebox.start(context, first, seed, avoid_previous)
+        return ""
 
     def stop_music(self) -> None:
         """@brief Stop the background music."""
@@ -172,6 +181,19 @@ class AudioPlayer:
             return None
         song = self.library.songs.get(self.jukebox.current)
         return (song.title, song.artist) if song else None
+
+    @property
+    def music_context(self) -> str:
+        """@brief Context of the current playlist, or an empty string when stopped."""
+        return self.jukebox.context if self.jukebox is not None else ""
+
+    def current_song_id(self) -> str | None:
+        """@brief Id of the currently audible song.
+        @return Song id, or None during silence or when music is unavailable.
+        """
+        if self.jukebox is None or not self.jukebox.current:
+            return None
+        return self.jukebox.current
 
     def update(self, dt: float = 0.0) -> None:
         """@brief Call once per frame so the next song starts after the gap.

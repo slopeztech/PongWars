@@ -4,7 +4,7 @@ import pytest
 
 from pongwars.domain.config import MatchConfig
 from pongwars.domain.events import CatPounced
-from pongwars.domain.world import FrameInputs, World
+from pongwars.domain.world import FrameInputs, Phase, World
 
 IDLE = FrameInputs((0.0, 0.0), (False, False))
 FIRE = FrameInputs((0.0, 0.0), (True, False))
@@ -13,6 +13,8 @@ FIRE = FrameInputs((0.0, 0.0), (True, False))
 def _armed(weapon: str, seed: int = 0) -> World:
     world = World(MatchConfig(seed=seed))
     for _ in range(200):
+        world.step(IDLE)
+    while world.phase is Phase.SERVING:
         world.step(IDLE)
     world.extras.apply(weapon, 0, [])
     return world

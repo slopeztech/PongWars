@@ -23,6 +23,11 @@ class PaddleHit(Event):
 
 
 @dataclass(frozen=True)
+class SpinHit(PaddleHit):
+    """@brief The ball bounced off a paddle while the player applied spin."""
+
+
+@dataclass(frozen=True)
 class WallHit(Event):
     """@brief The ball bounced off a wall or the field border."""
 
@@ -122,9 +127,15 @@ class ShieldUsed(Event):
 
 @dataclass(frozen=True)
 class BombDetonated(Event):
-    """@brief A bomb went off next to a paddle. @param player Owner of the bomb."""
+    """@brief A bomb went off next to a paddle.
+    @param player Owner of the bomb.
+    @param x Blast centre x.
+    @param y Blast centre y.
+    """
 
     player: int
+    x: float = 0.0
+    y: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -140,6 +151,21 @@ class CatPounced(Event):
 
     x: float
     y: float
+
+
+@dataclass(frozen=True)
+class MissileHit(Event):
+    """@brief A missile hit an obstacle or player.
+    @param player Missile owner.
+    @param x Impact x.
+    @param y Impact y.
+    @param target Hit player, or None when an obstacle was hit.
+    """
+
+    player: int
+    x: float
+    y: float
+    target: int | None
 
 
 @dataclass(frozen=True)

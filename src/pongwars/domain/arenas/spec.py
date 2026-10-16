@@ -24,6 +24,7 @@ class ObstacleSpec:
     patrol_x: float = 0.0
     patrol_y: float = 0.0
     period: int = 0
+    orbit: bool = False
 
     def build(self) -> Obstacle:
         """@brief Create the runtime obstacle."""
@@ -33,6 +34,7 @@ class ObstacleSpec:
             self.hp,
             Vec2(self.patrol_x, self.patrol_y),
             self.period,
+            orbit=self.orbit,
         )
 
     def swept(self) -> tuple[float, float, float, float]:
@@ -62,6 +64,7 @@ class ObstacleSpec:
             abs(self.patrol_x),
             abs(self.patrol_y),
             self.period,
+            self.orbit,
         )
 
     def validate(self, players: int = 2) -> str | None:
@@ -76,6 +79,8 @@ class ObstacleSpec:
             return "error.arena.invalid_value"
         moving = self.patrol_x != 0 or self.patrol_y != 0
         if moving != (self.period > 0):
+            return "error.arena.invalid_value"
+        if self.orbit and (self.patrol_x == 0 or self.patrol_y == 0):
             return "error.arena.invalid_value"
         x0, x1, y0, y1 = self.swept()
         if x0 < c.ARENA_SIDE_MARGIN or x1 > c.FIELD_WIDTH - c.ARENA_SIDE_MARGIN:

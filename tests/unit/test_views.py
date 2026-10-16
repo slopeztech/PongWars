@@ -13,6 +13,7 @@ import pygame  # noqa: E402
 from pongwars.core.i18n import Translator  # noqa: E402
 from pongwars.domain.config import MatchConfig  # noqa: E402
 from pongwars.domain.world import World  # noqa: E402
+from pongwars.render import renderer as renderer_module  # noqa: E402
 from pongwars.render.camera import Camera  # noqa: E402
 from pongwars.render.renderer import (  # noqa: E402
     LOW_H,
@@ -70,3 +71,28 @@ def test_hud_uses_translator() -> None:
     screen = pygame.display.set_mode((LOW_W, LOW_H))
     renderer.present(World(MatchConfig()), screen)
     assert any(k.startswith("hud.") for k in seen)
+
+
+def test_timed_hud_draws_clock_at_bottom_of_arena(monkeypatch: pytest.MonkeyPatch) -> None:
+    pygame.init()
+    drawn: list[tuple[str, int, int]] = []
+    draw_text = renderer_module.draw_text
+
+    def record_text(
+        surface: pygame.Surface,
+        text: str,
+        x: int,
+        y: int,
+        color: tuple[int, int, int],
+        scale: int = 1,
+    ) -> None:
+        drawn.append((text, x, y))
+        draw_text(surface, text, x, y, color, scale)
+
+    monkeypatch.setattr(renderer_module, "draw_text", record_text)
+    world = World(MatchConfig(mode="timed", options=(("duration_seconds", 120),)))
+    world.tick = 61
+    renderer = Renderer(RenderSettings(scale=1))
+    renderer.draw(world)
+
+    assert any(text == "01:59" and y == LOW_H - 5 - 4 for text, _, y in drawn)

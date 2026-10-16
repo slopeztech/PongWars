@@ -17,6 +17,7 @@ from pongwars.net.protocol import (
     PROTOCOL_VERSION,
     Accept,
     Bye,
+    Cosmetics,
     Hello,
     Input,
     Message,
@@ -75,6 +76,8 @@ class ClientSession:
         self.config: MatchConfig | None = None
         self.world: World | None = None
         self.roster: list[str] = []
+        self.colors: list[int] = []
+        self.skins: list[int] = []
         self.reject_reason = ""
         self.ping_ms = 0.0
         self.host_paused = False
@@ -131,6 +134,8 @@ class ClientSession:
             self.state = ClientState.REJECTED
         elif isinstance(message, Roster):
             self.roster = [str(n) for n in message.names]
+            self.colors = _fit_lobby_values(message.colors, len(self.roster), 8)
+            self.skins = _fit_lobby_values(message.skins, len(self.roster), 4)
         elif isinstance(message, Start):
             self._on_start(message)
         elif isinstance(message, Snapshot):
@@ -153,6 +158,8 @@ class ClientSession:
             return
         self.seat = accept.seat
         self.config = config
+        self.colors = [0, 1, 2, 3][: len(config.controllers)]
+        self.skins = [0] * len(config.controllers)
         if self.state is ClientState.CONNECTING:
             self.state = ClientState.LOBBY
 
@@ -166,10 +173,27 @@ class ClientSession:
             except (ValueError, TypeError, KeyError):
                 return
             self.config = config
+            self.colors = _fit_lobby_values(start.colors, len(config.controllers), 8)
+            self.skins = _fit_lobby_values(start.skins, len(config.controllers), 4)
             self._last_snapshot = -1
             self._prev = self._curr = None
         self.state = ClientState.PLAYING
         self._send(Ready())
+
+    def set_cosmetics(self, color: int | None = None, skin: int | None = None) -> None:
+        """@brief Update this client's seat appearance in the shared lobby."""
+        if self.state is not ClientState.LOBBY or self.seat < 0:
+            return
+        if color is not None and 0 <= color < 8:
+            while len(self.colors) <= self.seat:
+                self.colors.append(0)
+            self.colors[self.seat] = color
+        if skin is not None and 0 <= skin < 4:
+            while len(self.skins) <= self.seat:
+                self.skins.append(0)
+            self.skins[self.seat] = skin
+        if color is not None and skin is not None:
+            self._send(Cosmetics(color, skin))
 
     def _on_snapshot(self, message: Snapshot, now: float) -> None:
         if self.state is not ClientState.PLAYING or self.world is None:
@@ -186,15 +210,16 @@ class ClientSession:
         self.host_paused = bool(message.paused)
         self._events.extend(snapshot.events_from_list(message.events))
 
-    def send_input(self, move: float, fire: bool) -> None:
+    def send_input(self, move: float, fire: bool, spin: bool = False) -> None:
         """@brief Send this tick's paddle intent.
         @param move Paddle direction in [-1, 1].
         @param fire Whether the fire key is pressed.
+        @param spin Whether the spin key is pressed.
         """
         if self.state is not ClientState.PLAYING:
             return
         self._seq += 1
-        self._send(Input(self._seq, float(move), bool(fire)))
+        self._send(Input(self._seq, float(move), bool(fire), bool(spin)))
 
     def pop_events(self) -> list[Event]:
         """@brief Take the events received since the last call."""
@@ -218,3 +243,15 @@ class ClientSession:
                 self._send(Bye("left"))
             self.state = ClientState.CLOSED
         self.transport.close()
+
+
+def _fit_lobby_values(values: list[int], count: int, limit: int) -> list[int]:
+    result = []
+    for index in range(count):
+        value = values[index] if index < len(values) else 0
+        result.append(
+            value
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < limit
+            else 0
+        )
+    return result

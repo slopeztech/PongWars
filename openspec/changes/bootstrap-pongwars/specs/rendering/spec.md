@@ -57,3 +57,21 @@ All HUD text SHALL be resolved through the translator.
 #### Scenario: Locale keys
 - **WHEN** the HUD is drawn
 - **THEN** every label is obtained from a `hud.*` locale key
+
+### Requirement: Player-specific HUD extras
+Pickups, active effects and weapons SHALL use their complete localized names without clipping. Active effects and weapons SHALL be displayed below the score of the player they affect in shared and split views.
+
+#### Scenario: Shared view extras
+- **WHEN** a player has an active effect or weapon in shared view
+- **THEN** that extra is drawn below that player's score, not in a global list
+
+#### Scenario: Complete localized extra names
+- **WHEN** an extra pickup, effect or weapon is displayed
+- **THEN** its complete translated name is visible, along with remaining duration or ammunition where applicable
+
+### Requirement: Countdown placement
+The match countdown SHALL be displayed below the projected arena.
+
+#### Scenario: Countdown outside the arena
+- **WHEN** a countdown number is shown
+- **THEN** it is positioned below the arena boundary and remains visible in the viewport

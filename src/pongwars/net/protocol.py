@@ -2,10 +2,10 @@
 @brief Wire messages of the LAN protocol (transport and encoding independent).
 """
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from typing import Any
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 3
 DEFAULT_PORT = 47474
 MAX_NAME = 10
 REASON_VERSION = "VersionMismatch"
@@ -47,16 +47,28 @@ class Reject(Message):
 
 @dataclass(frozen=True)
 class Roster(Message):
-    """@brief Lobby state (also the lobby keep-alive). @param names Player name per seat."""
+    """@brief Lobby state with player cosmetics."""
 
     names: list[str]
+    colors: list[int] = field(default_factory=list)
+    skins: list[int] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Cosmetics(Message):
+    """@brief A client selects the color and paddle style for its seat."""
+
+    color: int
+    skin: int
 
 
 @dataclass(frozen=True)
 class Start(Message):
-    """@brief The match begins. @param config Final MatchConfig JSON."""
+    """@brief Match config and final lobby cosmetics."""
 
     config: str
+    colors: list[int] = field(default_factory=list)
+    skins: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -66,11 +78,14 @@ class Ready(Message):
 
 @dataclass(frozen=True)
 class Input(Message):
-    """@brief Client controls. @param seq Counter. @param move Intent. @param fire Fire."""
+    """@brief Client controls. @param seq Counter. @param move Intent. @param fire Fire.
+    @param spin Spin button.
+    """
 
     seq: int
     move: float
     fire: bool
+    spin: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,7 +133,7 @@ class DiscoverReply(Message):
     """@brief A host announces itself.
     @param name Host player name. @param mode Game mode. @param arena Arena.
     @param port Game port. @param players Seats in the arena. @param joined Remote players joined.
-    @param version Protocol version.
+    @param version Protocol version. @param room_name User-facing room name.
     """
 
     name: str
@@ -128,6 +143,7 @@ class DiscoverReply(Message):
     players: int
     joined: int
     version: int
+    room_name: str = ""
 
 
 MESSAGE_TYPES: dict[str, type[Message]] = {
@@ -138,6 +154,7 @@ MESSAGE_TYPES: dict[str, type[Message]] = {
         Reject,
         Roster,
         Start,
+        Cosmetics,
         Ready,
         Input,
         Snapshot,

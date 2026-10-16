@@ -13,6 +13,25 @@ MAX_PARTICLES = 256
 TRAIL_LENGTH = 8
 SHAKE_DECAY = 0.85
 SHAKE_CUTOFF = 0.05
+EXPLOSION_DURATION = 0.42
+
+
+@dataclass
+class Explosion:
+    """@brief Short-lived expanding blast effect in table space."""
+
+    x: float
+    y: float
+    elapsed: float = 0.0
+
+    @property
+    def progress(self) -> float:
+        """@brief Normalized animation progress."""
+        return min(1.0, self.elapsed / EXPLOSION_DURATION)
+
+    def update(self, dt: float) -> None:
+        """@brief Advance the animation."""
+        self.elapsed += dt
 
 
 @dataclass

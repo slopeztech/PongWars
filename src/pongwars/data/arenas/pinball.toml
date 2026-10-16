@@ -1,0 +1,18 @@
+id = "pinball"
+theme = "arcade"
+players = 2
+mirror = "x"
+
+[[obstacles]]
+kind = "bumper"
+x = 55
+y = 22
+half_w = 3
+half_h = 3
+
+[[obstacles]]
+kind = "bumper"
+x = 70
+y = 45
+half_w = 3
+half_h = 3

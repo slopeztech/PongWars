@@ -29,6 +29,7 @@ class HostInfo:
     players: int
     joined: int
     ping_ms: float
+    room_name: str = ""
 
 
 class Discovery:
@@ -82,6 +83,7 @@ class Discovery:
                 int(reply.players),
                 int(reply.joined),
                 max(0.0, (now - self._sent) * 1000.0),
+                str(reply.room_name),
             )
         return sorted(self.found.values(), key=lambda h: h.name)
 

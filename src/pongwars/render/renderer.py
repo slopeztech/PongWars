@@ -3,7 +3,6 @@
 """
 
 import math
-import random
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
@@ -11,13 +10,17 @@ from typing import Literal
 import pygame
 
 from pongwars.core.i18n import Translator
+from pongwars.core.settings import BALL_STYLES, FIELD_STYLES, TRAIL_STYLES
 from pongwars.domain import constants as c
-from pongwars.domain.entities import Rect
+from pongwars.domain.entities import Ball, Paddle, Rect
 from pongwars.domain.events import (
+    BallWarped,
+    BombDetonated,
     BumperHit,
     Event,
     Goal,
     LaserFired,
+    MissileHit,
     PaddleHit,
     PickupCollected,
     WallHit,
@@ -26,8 +29,8 @@ from pongwars.domain.world import SEAT_LEFT, SEAT_RIGHT, SEAT_TOP, Phase, World
 from pongwars.render import palette as pal
 from pongwars.render.backgrounds import draw_background
 from pongwars.render.camera import DEFAULT_BACK, DEFAULT_FOCAL, DEFAULT_HEIGHT, Camera
-from pongwars.render.effects import ParticleSystem, Shake, Trail
-from pongwars.render.font import draw_text, text_width
+from pongwars.render.effects import Explosion, ParticleSystem, Shake, Trail
+from pongwars.render.font import GLYPH_H, draw_text, text_width
 
 LOW_W = 320
 LOW_H = 180
@@ -59,7 +62,6 @@ PICKUP_BLINK_TICKS = 120
 PICKUP_BLINK_PERIOD = 6
 SHIELD_GAP = 1.5
 LASER_FRAMES = 6
-BLIND_NOISE_DOTS = 400
 EFFECT_ROW = 7
 CATEGORY_COLORS = {
     "power": pal.LIME,
@@ -90,6 +92,9 @@ class RenderSettings:
     scale: int = 4
     view: ViewMode = "shared"
     background: str = "grid"
+    ball_style: str = "classic"
+    trail_style: str = "classic"
+    field_style: str = "grid"
     paddle_colors: tuple[int, ...] = (0, 1, 2, 3)
     paddle_skins: tuple[int, ...] = (0, 0, 0, 0)
 
@@ -143,8 +148,8 @@ class Renderer:
         self.particles = ParticleSystem(seed)
         self.trail = Trail()
         self.shake = Shake(seed)
-        self._noise = random.Random(seed)  # noqa: S311 - visual only
         self._lasers: list[tuple[Point, Point, pal.Color, int]] = []
+        self.explosions: list[Explosion] = []
         self._clock = 0
         self.colors = [
             pal.PADDLE_PALETTE[i % len(pal.PADDLE_PALETTE)] for i in self.settings.paddle_colors
@@ -169,8 +174,15 @@ class Renderer:
                     )
                 )
                 self._burst(event.x, event.y, pal.ORANGE, 6)
+            elif isinstance(event, BombDetonated):
+                self.explosions.append(Explosion(event.x, event.y))
+                self._burst(event.x, event.y, pal.YELLOW, 28)
+            elif isinstance(event, BallWarped):
+                self._burst(event.x, event.y, pal.UI_CYAN, 12)
             elif isinstance(event, PickupCollected):
                 self._burst(pos.x, pos.y, pal.LIME, 10)
+            elif isinstance(event, MissileHit):
+                self._burst(event.x, event.y, pal.ORANGE, 8)
             elif isinstance(event, PaddleHit):
                 color = self.colors[event.player]
                 self._burst(pos.x, pos.y, color, 8)
@@ -190,6 +202,9 @@ class Renderer:
         self.particles.update(dt)
         self._clock += 1
         self._lasers = [(a, b, col, n - 1) for a, b, col, n in self._lasers if n > 1]
+        for explosion in self.explosions:
+            explosion.update(dt)
+        self.explosions = [e for e in self.explosions if e.progress < 1.0]
         if self.settings.trail and world.phase.value == "playing":
             self.trail.push(world.ball.pos.x, world.ball.pos.y)
 
@@ -234,18 +249,26 @@ class Renderer:
             return Camera(w, h)
         # Odd turns look along the long table axis, so pull the camera back and widen less.
         extent = (c.FIELD_WIDTH - c.FIELD_HEIGHT) / 2 if view.turns % 2 else 0.0
+        focal = DEFAULT_FOCAL * w / LOW_W * (ODD_TURN_ZOOM if view.turns % 2 else 1.0)
+        if view.turns % 2 and h < LOW_H:
+            # Fit the rotated field in short panes and leave room for the countdown HUD.
+            focal = min(focal, DEFAULT_FOCAL * h / LOW_H * 0.8)
         return Camera(
             w,
             h,
             back=DEFAULT_BACK + extent,
             height=DEFAULT_HEIGHT + extent,
-            focal=DEFAULT_FOCAL * w / LOW_W * (ODD_TURN_ZOOM if view.turns % 2 else 1.0),
+            focal=focal,
             quarter_turns=view.turns,
         )
 
     def _draw_scene(self, world: World) -> None:
         self._draw_table(world)
         items: list[tuple[float, str, int]] = []
+        items += [
+            (self._sort(portal.x, portal.y), "portal", i)
+            for i, portal in enumerate(world.portals)
+        ]
         items += [
             (self._sort(o.rect.cx, o.rect.cy), "obstacle", i)
             for i, o in enumerate(world.obstacles)
@@ -261,8 +284,22 @@ class Renderer:
             (self._sort(p.pos.x, p.pos.y), "pickup", i) for i, p in enumerate(world.extras.pickups)
         ]
         items += [(self._sort(k.pos.x, k.pos.y), "cat", i) for i, k in enumerate(world.extras.cats)]
+        items += [
+            (
+                self._sort(a.paddle.rect.cx, a.paddle.rect.cy),
+                "companion",
+                i,
+            )
+            for i, a in enumerate(world.extras.companions)
+        ]
+        items += [
+            (self._sort(m.pos.x, m.pos.y), "missile", i)
+            for i, m in enumerate(world.extras.missiles)
+        ]
         for _, kind, index in sorted(items):
-            if kind == "obstacle":
+            if kind == "portal":
+                self._portal(world, index)
+            elif kind == "obstacle":
                 obstacle = world.obstacles[index]
                 self._box(
                     obstacle.rect, OBSTACLE_HEIGHT, KIND_COLORS.get(obstacle.kind, pal.LAVENDER)
@@ -273,14 +310,23 @@ class Renderer:
                 self._pickup(world, index)
             elif kind == "cat":
                 self._cat(world, index)
+            elif kind == "companion":
+                ally = world.extras.companions[index]
+                self._draw_paddle(ally.paddle, ally.owner)
+            elif kind == "missile":
+                self._missile(world, index)
             else:
                 self._ball(world, index)
         self._draw_shields(world)
         self._draw_lasers()
+        self._draw_explosions()
         self._draw_particles()
 
     def _paddle(self, world: World, index: int) -> None:
-        rect = world.paddles[index].rect
+        self._draw_paddle(world.paddles[index], index)
+
+    def _draw_paddle(self, paddle: Paddle, index: int) -> None:
+        rect = paddle.rect
         color = self.colors[index]
         skin = self.settings.paddle_skins[index] if index < len(self.settings.paddle_skins) else 0
         self._box(rect, PADDLE_HEIGHT, color)
@@ -358,8 +404,19 @@ class Renderer:
     def _draw_table(self, world: World) -> None:
         w, h = c.FIELD_WIDTH, c.FIELD_HEIGHT
         self._quad([(0, 0, 0), (w, 0, 0), (w, h, 0), (0, h, 0)], pal.NAVY)
-        if self.settings.background == "grid":
+        field_style = (
+            self.settings.field_style
+            if self.settings.field_style in FIELD_STYLES
+            else "grid"
+        )
+        if field_style == "grid":
             self._draw_grid()
+        elif field_style == "checker":
+            self._draw_checkerboard()
+        elif field_style == "neon":
+            self._draw_grid(pal.shade(pal.BLUE, 0.75))
+            self._draw_field_border(pal.UI_CYAN)
+        self._draw_blind_zones(world)
         walls = (
             (world.players < 3 or not world.alive[2], 0.0),
             (world.players < 4 or not world.alive[3], h),
@@ -375,9 +432,9 @@ class Renderer:
             (round(mid[1].sx), round(mid[1].sy)),
         )
 
-    def _draw_grid(self) -> None:
+    def _draw_grid(self, color: pal.Color | None = None) -> None:
         w, h = c.FIELD_WIDTH, c.FIELD_HEIGHT
-        color = pal.shade(pal.NAVY, 1.5)
+        color = color or pal.shade(pal.NAVY, 1.5)
         offset = (self._clock // 4) % GRID_STEP
         for k in range(-1, int(w // GRID_STEP) + 1):
             x = k * GRID_STEP + offset
@@ -386,6 +443,97 @@ class Renderer:
                 pygame.draw.line(
                     self._canvas, color, (round(a.sx), round(a.sy)), (round(b.sx), round(b.sy))
                 )
+
+    def _draw_checkerboard(self) -> None:
+        columns, rows = 8, 6
+        cell_w, cell_h = c.FIELD_WIDTH / columns, c.FIELD_HEIGHT / rows
+        for row in range(rows):
+            for column in range(columns):
+                if (row + column) % 2:
+                    continue
+                x0, y0 = column * cell_w, row * cell_h
+                x1, y1 = x0 + cell_w, y0 + cell_h
+                self._quad(
+                    [(x0, y0, 0), (x1, y0, 0), (x1, y1, 0), (x0, y1, 0)],
+                    pal.shade(pal.BLUE, 0.2),
+                )
+
+    def _draw_field_border(self, color: pal.Color) -> None:
+        corners = (
+            (0.0, 0.0),
+            (c.FIELD_WIDTH, 0.0),
+            (c.FIELD_WIDTH, c.FIELD_HEIGHT),
+            (0.0, c.FIELD_HEIGHT),
+            (0.0, 0.0),
+        )
+        projected = [self.camera.project(x, y, 0.2) for x, y in corners]
+        pygame.draw.lines(
+            self._canvas,
+            color,
+            False,
+            [(round(point.sx), round(point.sy)) for point in projected],
+        )
+
+    def _draw_blind_zones(self, world: World) -> None:
+        for seat, effects in enumerate(world.extras.active):
+            if any(effect.name == "blind" for effect in effects):
+                self._draw_blind_zone(world, seat)
+
+    def _draw_blind_zone(self, world: World, seat: int) -> None:
+        half_w, half_h = c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2
+        bounds = (
+            (0.0, 0.0, half_w, c.FIELD_HEIGHT)
+            if seat == SEAT_LEFT
+            else (half_w, 0.0, c.FIELD_WIDTH, c.FIELD_HEIGHT)
+            if seat == SEAT_RIGHT
+            else (0.0, 0.0, c.FIELD_WIDTH, half_h)
+            if seat == SEAT_TOP
+            else (0.0, half_h, c.FIELD_WIDTH, c.FIELD_HEIGHT)
+        )
+        x0, y0, x1, y1 = bounds
+        columns, rows = (4, 6) if seat in (SEAT_LEFT, SEAT_RIGHT) else (8, 3)
+        cell_w, cell_h = (x1 - x0) / columns, (y1 - y0) / rows
+        colors = self._blind_ball_colors(world.ball)
+        overlay = pygame.Surface(self._canvas.get_size(), pygame.SRCALPHA)
+        for row in range(rows):
+            for column in range(columns):
+                color_index = (row * 2 + column) % len(colors)
+                color = colors[color_index]
+                if len(colors) == 1:
+                    color = pal.shade(color, 0.72 if (row + column) % 2 else 1.0)
+                corners = [
+                    self.camera.project(x, y, 0.15)
+                    for x, y in (
+                        (x0 + column * cell_w, y0 + row * cell_h),
+                        (x0 + (column + 1) * cell_w, y0 + row * cell_h),
+                        (x0 + (column + 1) * cell_w, y0 + (row + 1) * cell_h),
+                        (x0 + column * cell_w, y0 + (row + 1) * cell_h),
+                    )
+                ]
+                pygame.draw.polygon(
+                    overlay,
+                    (*color, 190),
+                    [(round(point.sx), round(point.sy)) for point in corners],
+                )
+        self._canvas.blit(overlay, (0, 0))
+
+    def _blind_ball_colors(self, ball: Ball) -> tuple[pal.Color, ...]:
+        style = (
+            self.settings.ball_style
+            if self.settings.ball_style in BALL_STYLES
+            else "classic"
+        )
+        colors = {
+            "classic": (pal.WHITE,),
+            "pixel": (pal.ORANGE, pal.WHITE, pal.YELLOW),
+            "energy": (pal.BLUE, pal.WHITE, pal.UI_CYAN),
+            "ring": (pal.WHITE, pal.PINK),
+        }[style]
+        if ball.spin_rate > 0:
+            return (*colors, pal.ORANGE)
+        if ball.spin_rate < 0:
+            return (*colors, pal.LIME)
+        return colors
 
     def _box(self, rect: Rect, height: float, color: pal.Color) -> None:
         x0, x1 = rect.cx - rect.half_w, rect.cx + rect.half_w
@@ -421,12 +569,25 @@ class Renderer:
             return
         half = c.PICKUP_RADIUS
         self._box(Rect(pickup.pos.x, pickup.pos.y, half, half), PICKUP_HEIGHT, color)
+        if pickup.target is not None:
+            p = self.camera.project(pickup.pos.x, pickup.pos.y, PICKUP_HEIGHT + 1.0)
+            pygame.draw.rect(
+                self._canvas,
+                self.colors[pickup.target],
+                (round(p.sx) - 2, round(p.sy) - 2, 5, 5),
+                1,
+            )
         p = self.camera.project(pickup.pos.x, pickup.pos.y, PICKUP_HEIGHT + 1.0)
-        code = self.translator.translate(f"extras.{pickup.name}.short")
+        label = self.translator.translate(f"extras.{pickup.name}.name")
+        label_width = text_width(label, SMALL_TEXT)
+        label_x = min(
+            max(round(p.sx) - label_width // 2, 0),
+            max(0, self._canvas.get_width() - label_width),
+        )
         draw_text(
             self._canvas,
-            code,
-            round(p.sx) - text_width(code, SMALL_TEXT) // 2,
+            label,
+            label_x,
             round(p.sy) - LABEL_GAP,
             pal.WHITE,
             SMALL_TEXT,
@@ -471,24 +632,143 @@ class Renderer:
                 p = self.camera.project(tx, ty, BALL_LIFT)
                 shade = (age + 1) / (len(self.trail.points) + 1)
                 radius = max(1, round(ball.radius * p.scale * shade * 0.6))
-                pygame.draw.circle(
-                    self._canvas,
-                    pal.shade(pal.WHITE, 0.4 * shade + 0.2),
-                    (round(p.sx), round(p.sy)),
-                    radius,
+                center = (round(p.sx), round(p.sy))
+                trail_style = (
+                    self.settings.trail_style
+                    if self.settings.trail_style in TRAIL_STYLES
+                    else "classic"
                 )
+                color = (
+                    (pal.BLUE, pal.PINK, pal.ORANGE)[age % 3]
+                    if trail_style == "neon"
+                    else pal.shade(pal.WHITE, 0.4 * shade + 0.2)
+                )
+                if trail_style == "pixel":
+                    pygame.draw.rect(
+                        self._canvas,
+                        color,
+                        (
+                            center[0] - radius,
+                            center[1] - radius,
+                            radius * 2 + 1,
+                            radius * 2 + 1,
+                        ),
+                    )
+                else:
+                    pygame.draw.circle(self._canvas, color, center, radius)
         ground = self.camera.project(ball.pos.x, ball.pos.y, 0.0)
         radius = max(1, round(ball.radius * ground.scale))
         shadow_rect = pygame.Rect(0, 0, radius * 2, max(1, radius))
         shadow_rect.center = (round(ground.sx), round(ground.sy))
         pygame.draw.ellipse(self._canvas, pal.shade(pal.NAVY, 0.4), shadow_rect)
         p = self.camera.project(ball.pos.x, ball.pos.y, BALL_LIFT)
-        pygame.draw.circle(self._canvas, pal.WHITE, (round(p.sx), round(p.sy)), radius)
+        center = (round(p.sx), round(p.sy))
+        ball_style = (
+            self.settings.ball_style if self.settings.ball_style in BALL_STYLES else "classic"
+        )
+        if ball_style == "pixel":
+            pygame.draw.rect(
+                self._canvas,
+                pal.ORANGE,
+                (center[0] - radius, center[1] - radius, radius * 2 + 1, radius * 2 + 1),
+            )
+            pygame.draw.rect(
+                self._canvas,
+                pal.WHITE,
+                (
+                    center[0] - max(1, radius // 2),
+                    center[1] - max(1, radius // 2),
+                    max(2, radius),
+                    max(2, radius),
+                ),
+            )
+        elif ball_style == "energy":
+            pygame.draw.circle(self._canvas, pal.BLUE, center, radius + 1)
+            pygame.draw.circle(self._canvas, pal.WHITE, center, max(1, radius - 1))
+        elif ball_style == "ring":
+            pygame.draw.circle(self._canvas, pal.WHITE, center, radius)
+            pygame.draw.circle(self._canvas, pal.PINK, center, max(1, radius - 1), 1)
+        else:
+            pygame.draw.circle(self._canvas, pal.WHITE, center, radius)
+        mark = (
+            max(
+                0,
+                min(
+                    self._canvas.get_width() - 1,
+                    round(p.sx + math.cos(ball.rotation) * max(1, radius - 1)),
+                ),
+            ),
+            max(
+                0,
+                min(
+                    self._canvas.get_height() - 1,
+                    round(p.sy + math.sin(ball.rotation) * max(1, radius - 1)),
+                ),
+            ),
+        )
+        self._canvas.set_at(
+            mark,
+            (
+                pal.ORANGE
+                if ball.spin_rate > 0
+                else pal.LIME
+                if ball.spin_rate < 0
+                else pal.YELLOW
+                if ball_style == "pixel"
+                else pal.UI_CYAN
+                if ball_style == "energy"
+                else pal.PINK
+                if ball_style == "ring"
+                else pal.WHITE
+            ),
+        )
+
+    def _missile(self, world: World, index: int) -> None:
+        missile = world.extras.missiles[index]
+        p = self.camera.project(missile.pos.x, missile.pos.y, BALL_LIFT)
+        length = missile.vel.length()
+        if length <= 0.0:
+            return
+        dx = missile.vel.x / length * max(2.0, missile.radius * 2.0)
+        dy = missile.vel.y / length * max(2.0, missile.radius * 2.0)
+        nose = self.camera.project(missile.pos.x + dx, missile.pos.y + dy, BALL_LIFT)
+        pygame.draw.line(
+            self._canvas,
+            self.colors[missile.owner],
+            (round(p.sx), round(p.sy)),
+            (round(nose.sx), round(nose.sy)),
+            2,
+        )
+
+    def _portal(self, world: World, index: int) -> None:
+        portal = world.portals[index]
+        point = self.camera.project(portal.x, portal.y, 0.5)
+        center = (round(point.sx), round(point.sy))
+        pulse = math.sin(self._clock / 3.0 + index * math.pi)
+        radius = max(4, round((7.0 + pulse) * point.scale))
+        color = pal.UI_CYAN if index == 0 else pal.PINK
+        pygame.draw.circle(self._canvas, color, center, radius, 2)
+        pygame.draw.circle(self._canvas, pal.WHITE, center, max(1, radius - 3), 1)
+        pygame.draw.circle(self._canvas, pal.NAVY, center, max(1, radius // 2))
 
     def _draw_particles(self) -> None:
         for part in self.particles.particles:
             p = self.camera.project(part.x, part.y, part.z)
             self._canvas.fill(part.color, (round(p.sx), round(p.sy), 1, 1))
+
+    def _draw_explosions(self) -> None:
+        for explosion in self.explosions:
+            progress = explosion.progress
+            point = self.camera.project(explosion.x, explosion.y, BALL_LIFT)
+            center = (round(point.sx), round(point.sy))
+            radius = max(2, round((3.0 + 17.0 * progress) * point.scale))
+            for offset, color in (
+                (0.0, pal.YELLOW),
+                (0.28, pal.ORANGE),
+                (0.56, pal.RED),
+            ):
+                ring_radius = max(1, round(radius * (1.0 - offset)))
+                pygame.draw.circle(self._canvas, color, center, ring_radius, 1)
 
     def _seat_label(self, seat: int) -> str:
         return self.translator.translate("hud.player", number=seat + 1).upper()
@@ -496,53 +776,92 @@ class Renderer:
     def _draw_hud(self, world: World, view: Viewport) -> None:
         w, h = view.rect.size
         if view.seat is None:
-            self._draw_shared_scores(world, w)
+            score_positions = self._draw_shared_scores(world, w)
         else:
-            self._draw_split_scores(world, view.seat, w)
+            score_positions = self._draw_split_scores(world, view.seat, w)
         message = None
+        message_y = h // 2
         if world.phase is Phase.SERVING:
-            message = self.translator.translate("hud.get_ready")
+            countdown = world.countdown_number
+            message = (
+                str(countdown)
+                if countdown is not None
+                else self.translator.translate("hud.get_ready")
+            )
+            if countdown is not None:
+                corners = [
+                    self.camera.project(x, y)
+                    for x, y in (
+                        (0.0, 0.0),
+                        (c.FIELD_WIDTH, 0.0),
+                        (c.FIELD_WIDTH, c.FIELD_HEIGHT),
+                        (0.0, c.FIELD_HEIGHT),
+                    )
+                ]
+                message_y = min(
+                    h - GLYPH_H * BIG_TEXT,
+                    round(max(point.sy for point in corners)) + HUD_MARGIN,
+                )
         elif world.phase is Phase.FINISHED and world.winner is not None:
             message = self.translator.translate(
                 "match.score.winner", player=self._seat_label(world.winner)
             )
         if message:
             text = message.upper()
-            x = (w - text_width(text, SMALL_TEXT)) // 2
-            draw_text(self._canvas, text, x, h // 2, pal.WHITE, SMALL_TEXT)
-        self._draw_effects(world, view)
+            size = BIG_TEXT if world.countdown_number is not None else SMALL_TEXT
+            x = (w - text_width(text, size)) // 2
+            draw_text(self._canvas, text, x, message_y, pal.WHITE, size)
+        if world.config.mode == "timed":
+            duration = world.mode.values["duration_seconds"]
+            remaining = max(0, duration * c.TICK_RATE - world.tick)
+            seconds = (remaining + c.TICK_RATE - 1) // c.TICK_RATE
+            clock = f"{seconds // 60:02d}:{seconds % 60:02d}"
+            draw_text(
+                self._canvas,
+                clock,
+                (w - text_width(clock, SMALL_TEXT)) // 2,
+                h - GLYPH_H - HUD_MARGIN,
+                pal.YELLOW,
+                SMALL_TEXT,
+            )
+        self._draw_effects(world, score_positions, view.seat)
 
-    def _draw_effects(self, world: World, view: Viewport) -> None:
-        w, h = view.rect.size
-        seats = range(world.players) if view.seat is None else [view.seat]
-        row = 0
-        for seat in seats:
-            parts = [
-                f"{self.translator.translate(f'extras.{e.name}.short')} "
-                f"{e.remaining // c.TICK_RATE + 1}"
-                for e in world.extras.active[seat]
+    def _draw_effects(
+        self, world: World, positions: dict[int, tuple[int, int]], own_seat: int | None
+    ) -> None:
+        line_height = GLYPH_H * SMALL_TEXT + 1
+        width = self._canvas.get_width()
+        for seat, (x, y) in positions.items():
+            labels = [
+                f"{self.translator.translate(f'extras.{effect.name}.name')} "
+                f"{effect.remaining // c.TICK_RATE + 1}"
+                for effect in world.extras.active[seat]
             ]
             weapon = world.extras.weapons[seat]
             if weapon is not None:
-                code = self.translator.translate(f"extras.{weapon[0]}.short")
-                parts.append(f"{code} X{weapon[1]}")
-            if parts:
+                name = self.translator.translate(f"extras.{weapon[0]}.name")
+                labels.append(f"{name} X{weapon[1]}")
+            for row, label in enumerate(labels):
+                label_width = text_width(label, SMALL_TEXT)
+                left = 0
+                right = width
+                if own_seat is None and world.players > SPLIT_COLUMNS:
+                    left = 0 if seat in (0, 2) else width // SPLIT_COLUMNS
+                    right = left + width // SPLIT_COLUMNS
+                label_x = min(max(x, left), max(left, right - label_width))
+                row_y = y + row * line_height
+                if own_seat is None and world.players > SPLIT_COLUMNS and seat >= SPLIT_COLUMNS:
+                    row_y += 2 * line_height
                 draw_text(
                     self._canvas,
-                    " ".join(parts).upper(),
-                    HUD_MARGIN,
-                    h - EFFECT_ROW * (row + 1),
+                    label,
+                    label_x,
+                    row_y,
                     self.colors[seat],
                     SMALL_TEXT,
                 )
-                row += 1
-            blind = any(e.name == "blind" for e in world.extras.active[seat])
-            if blind and view.seat == seat:
-                for _ in range(BLIND_NOISE_DOTS):
-                    dot = (self._noise.randrange(w), self._noise.randrange(h))
-                    self._canvas.set_at(dot, pal.WHITE)
 
-    def _draw_shared_scores(self, world: World, w: int) -> None:
+    def _draw_shared_scores(self, world: World, w: int) -> dict[int, tuple[int, int]]:
         mid = w // 2
         slots = [
             HUD_MARGIN,
@@ -552,6 +871,7 @@ class Renderer:
         ]
         if world.players == SPLIT_COLUMNS:
             slots = [mid - SHARED_DUEL_OFFSET, mid + SHARED_DUEL_OFFSET]
+        positions: dict[int, tuple[int, int]] = {}
         for seat, score in enumerate(world.scores):
             x = slots[seat]
             color = self.colors[seat] if world.alive[seat] else pal.DARK_GREY
@@ -563,9 +883,15 @@ class Renderer:
                 x -= width // 2
             draw_text(self._canvas, label, x, HUD_TOP, color, SMALL_TEXT)
             draw_text(self._canvas, value, x, HUD_TOP + LABEL_GAP, color, BIG_TEXT)
+            positions[seat] = (
+                x,
+                HUD_TOP + LABEL_GAP + BIG_TEXT * GLYPH_H + HUD_MARGIN,
+            )
+        return positions
 
-    def _draw_split_scores(self, world: World, own: int, w: int) -> None:
+    def _draw_split_scores(self, world: World, own: int, w: int) -> dict[int, tuple[int, int]]:
         x = HUD_MARGIN
+        positions: dict[int, tuple[int, int]] = {}
         for seat in sorted(range(world.players), key=lambda s: s != own):
             color = self.colors[seat] if world.alive[seat] else pal.DARK_GREY
             text = f"{self._seat_label(seat)} {world.scores[seat]}"
@@ -573,4 +899,6 @@ class Renderer:
             if x + text_width(text, size) > w:
                 break
             draw_text(self._canvas, text, x, HUD_TOP, color, size)
+            positions[seat] = (x, HUD_TOP + max(size, SMALL_TEXT) * GLYPH_H + HUD_MARGIN)
             x += text_width(text, size) + HUD_MARGIN
+        return positions

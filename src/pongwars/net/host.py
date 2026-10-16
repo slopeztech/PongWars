@@ -22,6 +22,7 @@ from pongwars.net.protocol import (
     REASON_VERSION,
     Accept,
     Bye,
+    Cosmetics,
     DiscoverReply,
     DiscoverRequest,
     Hello,
@@ -44,8 +45,9 @@ HEARTBEAT = 1.0
 START_RESEND = 0.25
 START_WAIT = 3.0
 NAME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+ROOM_NAME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_. ")
 
-LocalInput = Callable[[int], tuple[float, bool]]
+LocalInput = Callable[[int], tuple[float, bool] | tuple[float, bool, bool]]
 
 
 class HostState(Enum):
@@ -66,6 +68,7 @@ class RemotePlayer:
     seq: int = -1
     move: float = 0.0
     fire: bool = False
+    spin: bool = False
     ready: bool = False
 
 
@@ -76,6 +79,20 @@ def clean_name(raw: object) -> str:
     """
     text = "".join(ch for ch in str(raw).upper() if ch in NAME_CHARS)[:MAX_NAME]
     return text or "PLAYER"
+
+
+def clean_room_name(raw: object) -> str:
+    """@brief Normalize a discovery room title to printable, bounded text."""
+    text = "".join(ch for ch in str(raw).upper() if ch in ROOM_NAME_CHARS).strip()[:20]
+    return text or "PONGWARS"
+
+
+def _fit_cosmetics(values: list[int] | tuple[int, ...] | None, count: int, limit: int) -> list[int]:
+    fitted = list(values or ())[:count]
+    return [
+        value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < limit else 0
+        for value in fitted
+    ] + [0] * (count - len(fitted))
 
 
 def sanitize_move(value: object) -> float:
@@ -98,6 +115,9 @@ class HostSession:
         transport: Transport,
         clock: Callable[[], float] = time.monotonic,
         codec: Codec | None = None,
+        room_name: str | None = None,
+        colors: list[int] | tuple[int, ...] | None = None,
+        skins: list[int] | tuple[int, ...] | None = None,
     ) -> None:
         """@brief Open the lobby.
         @param config Match settings; seat 0 is the host, "remote" seats wait for clients.
@@ -108,12 +128,15 @@ class HostSession:
         """
         self.config = config
         self.name = clean_name(name)
+        self.room_name = clean_room_name(room_name or name)
         self.transport = transport
         self.clock = clock
         self.codec = codec or JsonCodec()
         self.state = HostState.LOBBY
         self.world: World | None = None
         self.remotes: dict[int, RemotePlayer] = {}
+        self.colors = _fit_cosmetics(colors, len(config.controllers), 8)
+        self.skins = _fit_cosmetics(skins, len(config.controllers), 4)
         self.dropped: list[int] = []
         self.ai_seats: set[int] = set()
         self._seq = 0
@@ -178,7 +201,19 @@ class HostSession:
         self._check_timeouts(now)
         if self.state is HostState.LOBBY and now - self._last_heartbeat >= HEARTBEAT:
             self._last_heartbeat = now
-            self._broadcast_remotes(Roster(self.names()))
+            self._broadcast_remotes(self._roster())
+
+    def _roster(self) -> Roster:
+        return Roster(self.names(), self.colors.copy(), self.skins.copy())
+
+    def set_cosmetics(self, seat: int, color: int | None = None, skin: int | None = None) -> None:
+        if not 0 <= seat < len(self.colors):
+            return
+        if color is not None and isinstance(color, int) and not isinstance(color, bool) and 0 <= color < 8:
+            self.colors[seat] = color
+        if skin is not None and isinstance(skin, int) and not isinstance(skin, bool) and 0 <= skin < 4:
+            self.skins[seat] = skin
+        self._broadcast_remotes(self._roster())
 
     def _seat_of(self, addr: Address) -> int | None:
         for seat, remote in self.remotes.items():
@@ -204,10 +239,13 @@ class HostSession:
                 remote.seq = message.seq
                 remote.move = sanitize_move(message.move)
                 remote.fire = message.fire is True
+                remote.spin = message.spin is True
         elif isinstance(message, Ping):
             self._send(Pong(message.ts), addr)
         elif isinstance(message, Ready):
             remote.ready = True
+        elif isinstance(message, Cosmetics) and self.state is HostState.LOBBY:
+            self.set_cosmetics(seat, message.color, message.skin)
         elif isinstance(message, Bye):
             self._on_leave(seat)
 
@@ -220,6 +258,7 @@ class HostSession:
             len(self.config.controllers),
             len(self.remotes),
             PROTOCOL_VERSION,
+            self.room_name,
         )
         self._send(reply, addr)
 
@@ -247,14 +286,14 @@ class HostSession:
         self._send(Accept(seat, self.config.to_json()), addr)
         if self.state is HostState.PLAYING:
             self.remotes[seat].ready = False
-            self._send(Start(self.config.to_json()), addr)
+            self._send(self._start_message(), addr)
         else:
-            self._broadcast_remotes(Roster(self.names()))
+            self._broadcast_remotes(self._roster())
 
     def _on_leave(self, seat: int) -> None:
         if self.state is HostState.LOBBY:
             self.remotes.pop(seat, None)
-            self._broadcast_remotes(Roster(self.names()))
+            self._broadcast_remotes(self._roster())
         elif seat not in self.dropped:
             self.dropped.append(seat)
 
@@ -277,8 +316,11 @@ class HostSession:
         self.world = World(self.config)
         self.state = HostState.PLAYING
         self._start_time = self._last_start = self.clock()
-        self._broadcast_remotes(Start(self.config.to_json()))
+        self._broadcast_remotes(self._start_message())
         return self.world
+
+    def _start_message(self) -> Start:
+        return Start(self.config.to_json(), self.colors.copy(), self.skins.copy())
 
     def resolve(self, action: str) -> None:
         """@brief Decide what to do about missing players.
@@ -303,23 +345,28 @@ class HostSession:
                 self._last_start = now
                 for remote in self.remotes.values():
                     if not remote.ready:
-                        self._send(Start(self.config.to_json()), remote.addr)
+                        self._send(self._start_message(), remote.addr)
             return []
         if self.paused:
             self._send_snapshot([])
             return []
         moves: list[float] = []
         fire: list[bool] = []
+        spin: list[bool] = []
         for seat in range(self.world.players):
             if self.is_remote(seat):
                 remote = self.remotes[seat]
                 moves.append(remote.move)
                 fire.append(remote.fire)
+                spin.append(remote.spin)
             else:
-                move, shot = local(seat)
+                local_input = local(seat)
+                move, shot = local_input[:2]
+                spinning = local_input[2] if len(local_input) > 2 else False
                 moves.append(move)
                 fire.append(shot)
-        events = self.world.step(FrameInputs(tuple(moves), tuple(fire)))
+                spin.append(spinning)
+        events = self.world.step(FrameInputs(tuple(moves), tuple(fire), tuple(spin)))
         self._pending.extend(events)
         finished = self.world.phase.value == "finished"
         if self.world.tick % SNAPSHOT_EVERY == 0 or finished or events:

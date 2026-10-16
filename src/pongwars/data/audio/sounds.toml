@@ -4,6 +4,7 @@
 [events]
 Served = "serve"
 PaddleHit = "paddle"
+SpinHit = "spin_hit"
 WallHit = "wall"
 BumperHit = "bumper"
 Goal = "goal"
@@ -60,6 +61,13 @@ wave = "square"
 from = 440
 to = 440
 duration = 0.06
+
+[sounds.spin_hit]
+wave = "triangle"
+from = 960
+to = 260
+duration = 0.16
+volume = 0.55
 
 [sounds.wall]
 wave = "square"
@@ -139,10 +147,11 @@ to = 200
 duration = 0.2
 
 [sounds.bomb]
-wave = "noise"
-from = 0
-to = 0
-duration = 0.5
+wave = "explosion"
+from = 90
+to = 28
+duration = 0.42
+volume = 0.7
 
 [sounds.alarm]
 wave = "square"

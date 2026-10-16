@@ -37,11 +37,14 @@ def _obstacle(raw: dict[str, Any], index: int, source: str, players: int) -> Obs
             patrol_x=float(raw.get("patrol_x", 0.0)),
             patrol_y=float(raw.get("patrol_y", 0.0)),
             period=int(raw.get("period", 0)),
+            orbit=raw.get("orbit", False),
         )
     except KeyError as exc:
         raise ArenaError("error.arena.missing_field", source, index, field=exc.args[0]) from exc
     except (TypeError, ValueError) as exc:
         raise ArenaError("error.arena.invalid_value", source, index) from exc
+    if not isinstance(spec.orbit, bool):
+        raise ArenaError("error.arena.invalid_value", source, index)
     problem = spec.validate(players)
     if problem:
         raise ArenaError(problem, source, index)

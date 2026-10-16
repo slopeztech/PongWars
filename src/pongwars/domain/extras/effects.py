@@ -7,8 +7,14 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
 from pongwars.domain import constants as c
-from pongwars.domain.entities import Ball, Cat, Rect
-from pongwars.domain.events import BallWarped, BombDetonated, CatReleased, Event, LaserFired
+from pongwars.domain.entities import Ball, Cat, Companion, Missile, Paddle, Rect
+from pongwars.domain.events import (
+    BallWarped,
+    BombDetonated,
+    CatReleased,
+    Event,
+    LaserFired,
+)
 from pongwars.domain.extras.base import EFFECTS, Effect, Mods
 from pongwars.domain.vec import Vec2
 
@@ -27,6 +33,10 @@ def _register(name: str, category: str) -> Callable[[E], E]:
         return cls
 
     return decorator
+
+
+def _paddle_inner_direction(player: int) -> Vec2:
+    return Vec2(*SHOT_DIRECTIONS[player])
 
 
 def opponents(world: "World", player: int) -> list[int]:
@@ -263,7 +273,7 @@ class Bomb(Effect):
             )
             ball.vel = heading * speed
             ball.held_by = None
-        events.append(BombDetonated(player))
+        events.append(BombDetonated(player, centre.x, centre.y))
 
 
 def _scale_balls(world: "World", factor: float) -> None:
@@ -416,3 +426,96 @@ class Warp(Effect):
             y = world.rng.uniform(c.WARP_MARGIN, c.FIELD_HEIGHT - c.WARP_MARGIN)
             ball.pos = Vec2(x, y)
             events.append(BallWarped(x, y))
+
+
+@_register("companion", "power")
+class CompanionPower(Effect):
+    """@brief Adds a temporary AI mini-paddle that helps defend the owner's goal."""
+
+    def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Create or refresh the owner's helper paddle.
+        @param world Match being played.
+        @param player Collector.
+        @param events Unused.
+        """
+        paddle = world.paddles[player]
+        toward = _paddle_inner_direction(player)
+        x = paddle.rect.cx + toward.x * c.COMPANION_OFFSET
+        y = paddle.rect.cy + toward.y * c.COMPANION_OFFSET
+        if paddle.axis == "y":
+            rect = Rect(
+                x,
+                y,
+                paddle.rect.half_w * 0.65,
+                c.COMPANION_HALF_LENGTH,
+            )
+        else:
+            rect = Rect(
+                x,
+                y,
+                c.COMPANION_HALF_LENGTH,
+                paddle.rect.half_h * 0.65,
+            )
+        world.extras.companions = [ally for ally in world.extras.companions if ally.owner != player]
+        world.extras.companions.append(
+            Companion(Paddle(rect, paddle.axis), player, self.spec.ticks)
+        )
+
+
+@_register("headbutt", "weapon")
+class Headbutt(Effect):
+    """@brief Lunges the owner's paddle forward for a short time."""
+
+    lasting = False
+
+    def fire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Extend the paddle's forward reach briefly.
+        @param world Match being played.
+        @param player Shooter.
+        @param events Unused.
+        """
+        world.start_headbutt(player)
+
+
+@_register("missile", "weapon")
+class MissileWeapon(Effect):
+    """@brief Fires two missiles aimed at opponents that damage destructibles."""
+
+    lasting = False
+
+    def fire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Launch a missile at the nearest living opponent.
+        @param world Match being played.
+        @param player Shooter.
+        @param events Unused.
+        """
+        targets = opponents(world, player)
+        if not targets:
+            return
+        paddle = world.paddles[player]
+        origin = Vec2(paddle.rect.cx, paddle.rect.cy)
+        target = min(
+            targets,
+            key=lambda seat: (
+                Vec2(world.paddles[seat].rect.cx, world.paddles[seat].rect.cy) - origin
+            ).length(),
+        )
+        delta = Vec2(
+            world.paddles[target].rect.cx - origin.x,
+            world.paddles[target].rect.cy - origin.y,
+        )
+        length = delta.length()
+        if length == 0.0:
+            return
+        direction = delta * (1.0 / length)
+        offset = paddle.rect.half_w if abs(direction.x) >= abs(direction.y) else paddle.rect.half_h
+        pos = origin + direction * (offset + c.MISSILE_RADIUS + 1.0)
+        world.extras.missiles.append(
+            Missile(
+                pos,
+                direction * c.MISSILE_SPEED,
+                player,
+                c.MISSILE_TTL_TICKS,
+                c.MISSILE_RADIUS,
+            )
+        )

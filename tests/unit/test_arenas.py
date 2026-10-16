@@ -14,7 +14,7 @@ from pongwars.domain.arenas import (
 )
 from pongwars.domain.config import ConfigError, MatchConfig
 from pongwars.domain.entities import Obstacle, Rect
-from pongwars.domain.events import BumperHit, ObstacleDestroyed, WallHit
+from pongwars.domain.events import BallWarped, BumperHit, Event, ObstacleDestroyed, WallHit
 from pongwars.domain.physics import sweep_circle_rect
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import FrameInputs, Phase, World
@@ -37,12 +37,80 @@ def test_arenas_at_least_five_builtin() -> None:
     assert len(arena_names()) >= 5
 
 
-@pytest.mark.parametrize("name", ["classic", "pillars", "bumpers", "moving_walls", "fortress"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "classic",
+        "pillars",
+        "bumpers",
+        "moving_walls",
+        "fortress",
+        "monolith",
+        "orbital",
+        "pinball",
+        "portal",
+    ],
+)
 def test_arenas_builtin_fair_and_open(name: str) -> None:
     arena = get_arena(name)
     assert arena.is_mirror_symmetric()
     assert arena.has_open_path()
     World(MatchConfig(arena=name))
+
+
+@pytest.mark.parametrize("name", ["monolith", "orbital", "pinball", "portal"])
+def test_new_arenas_are_two_player(name: str) -> None:
+    assert get_arena(name).players == 2
+
+
+def test_orbital_arena_obstacles_follow_circular_paths() -> None:
+    world = World(MatchConfig(arena="orbital"))
+    first, second = world.obstacles
+
+    first.update(0)
+    second.update(0)
+    assert first.rect.cx == pytest.approx(65.0)
+    assert first.rect.cy == pytest.approx(45.0)
+    assert second.rect.cx == pytest.approx(95.0)
+    assert second.rect.cy == pytest.approx(45.0)
+
+    first.update(90)
+    second.update(90)
+    assert first.rect.cx == pytest.approx(55.0)
+    assert first.rect.cy == pytest.approx(55.0)
+    assert second.rect.cx == pytest.approx(105.0)
+    assert second.rect.cy == pytest.approx(55.0)
+
+
+def test_portal_positions_are_seeded_and_separated() -> None:
+    first = World(MatchConfig(arena="portal", seed=20))
+    same_seed = World(MatchConfig(arena="portal", seed=20))
+    other_seed = World(MatchConfig(arena="portal", seed=21))
+
+    assert first.portals == same_seed.portals
+    assert first.portals != other_seed.portals
+    assert len(first.portals) == 2
+    assert (first.portals[1] - first.portals[0]).length() >= c.PORTAL_MIN_SEPARATION
+
+
+def test_ball_teleports_through_portal_preserving_direction_and_reducing_speed() -> None:
+    world = World(MatchConfig(arena="portal", seed=20))
+    entry, exit = world.portals
+    world.ball.pos = Vec2(
+        entry.x - c.PORTAL_RADIUS - world.ball.radius - 0.5,
+        entry.y,
+    )
+    world.ball.vel = Vec2(80.0, 0.0)
+    events: list[Event] = []
+
+    world._move_ball(world.ball, events)
+
+    assert any(isinstance(event, BallWarped) for event in events)
+    assert world.ball.vel.x > 0
+    assert world.ball.vel.y == pytest.approx(0)
+    assert world.ball.vel.length() == pytest.approx(80.0 * c.PORTAL_SPEED_FACTOR)
+    assert world.ball.pos.x > exit.x + c.PORTAL_RADIUS + world.ball.radius
+    assert world.ball.pos.y == pytest.approx(exit.y)
 
 
 def test_arenas_unknown_raises() -> None:

@@ -109,6 +109,21 @@ category = "weapon"
 ammo = 2
 weight = 2
 
+[companion]
+category = "power"
+duration = 8.0
+weight = 3
+
+[headbutt]
+category = "weapon"
+ammo = 1
+weight = 2
+
+[missile]
+category = "weapon"
+ammo = 2
+weight = 3
+
 [turbo_ball]
 category = "penalty"
 weight = 2

@@ -2,6 +2,7 @@
 @brief Swept collision of a circle (ball) against rectangles; prevents tunneling.
 """
 
+import math
 from dataclasses import dataclass
 
 from pongwars.domain.constants import EPSILON
@@ -15,6 +16,23 @@ class Hit:
 
     t: float
     normal: Vec2
+
+
+def sweep_circle_circle(pos: Vec2, disp: Vec2, center: Vec2, radius: float) -> float | None:
+    """@brief First contact fraction for a moving circle and a stationary circle."""
+    a = disp.x * disp.x + disp.y * disp.y
+    if a <= EPSILON:
+        return None
+    offset = pos - center
+    c0 = offset.x * offset.x + offset.y * offset.y - radius * radius
+    if c0 <= 0.0:
+        return 0.0
+    b = 2.0 * (offset.x * disp.x + offset.y * disp.y)
+    discriminant = b * b - 4.0 * a * c0
+    if discriminant < 0.0:
+        return None
+    t = (-b - math.sqrt(discriminant)) / (2.0 * a)
+    return t if 0.0 <= t <= 1.0 else None
 
 
 def sweep_circle_rect(pos: Vec2, disp: Vec2, radius: float, rect: Rect) -> Hit | None:

@@ -7,7 +7,7 @@ from dataclasses import fields
 from typing import Any
 
 from pongwars.domain import events as ev
-from pongwars.domain.entities import Ball, Cat
+from pongwars.domain.entities import Ball, Cat, Companion, Missile, Paddle, Rect
 from pongwars.domain.extras import EFFECTS, Pickup
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import Phase, World
@@ -38,7 +38,16 @@ def capture(world: World) -> dict[str, Any]:
         "scores": list(world.scores),
         "alive": [bool(a) for a in world.alive],
         "balls": [
-            [_r(b.pos.x), _r(b.pos.y), _r(b.vel.x), _r(b.vel.y), b.toucher, b.held_by]
+            [
+                _r(b.pos.x),
+                _r(b.pos.y),
+                _r(b.vel.x),
+                _r(b.vel.y),
+                b.toucher,
+                b.held_by,
+                _r(b.rotation),
+                _r(b.spin_rate),
+            ]
             for b in world.balls
         ],
         "paddles": [
@@ -46,8 +55,36 @@ def capture(world: World) -> dict[str, Any]:
             for p in world.paddles
         ],
         "obs": [[_r(o.rect.cx), _r(o.rect.cy), o.hp, int(o.active)] for o in world.obstacles],
-        "pick": [[_r(p.pos.x), _r(p.pos.y), p.name, p.ttl] for p in world.extras.pickups],
+        "portals": [[_r(p.x), _r(p.y)] for p in world.portals],
+        "pick": [
+            [_r(p.pos.x), _r(p.pos.y), p.name, p.ttl, p.target, p.reduced]
+            for p in world.extras.pickups
+        ],
         "cats": [[_r(k.pos.x), _r(k.pos.y), k.owner, k.ttl, k.cooldown] for k in world.extras.cats],
+        "companions": [
+            [
+                _r(a.paddle.rect.cx),
+                _r(a.paddle.rect.cy),
+                _r(a.paddle.rect.half_w),
+                _r(a.paddle.rect.half_h),
+                a.paddle.axis,
+                a.owner,
+                a.ttl,
+            ]
+            for a in world.extras.companions
+        ],
+        "missiles": [
+            [
+                _r(m.pos.x),
+                _r(m.pos.y),
+                _r(m.vel.x),
+                _r(m.vel.y),
+                m.owner,
+                m.ttl,
+                _r(m.radius),
+            ]
+            for m in world.extras.missiles
+        ],
         "fx": [[[e.name, e.remaining] for e in seat] for seat in world.extras.active],
         "wpn": [list(w) if w else None for w in world.extras.weapons],
     }
@@ -72,6 +109,9 @@ def _apply(world: World, state: dict[str, Any]) -> None:
         raise ValueError("snapshot does not match the world")
     if not (len(state["scores"]) == len(state["alive"]) == len(state["fx"]) == n):
         raise ValueError("snapshot does not match the world")
+    portals = state.get("portals", [])
+    if len(portals) != len(world.portals):
+        raise ValueError("snapshot does not match the world")
     balls = state["balls"]
     if not balls:
         raise ValueError("no ball")
@@ -88,13 +128,39 @@ def _apply(world: World, state: dict[str, Any]) -> None:
     for obstacle, row in zip(world.obstacles, obstacles, strict=True):
         obstacle.rect.cx, obstacle.rect.cy = float(row[0]), float(row[1])
         obstacle.hp, obstacle.active = int(row[2]), bool(row[3])
+    world.portals = tuple(Vec2(float(row[0]), float(row[1])) for row in portals)
     manager = world.extras
     manager.pickups = [
-        Pickup(Vec2(float(x), float(y)), str(name), int(ttl)) for x, y, name, ttl in state["pick"]
+        Pickup(
+            Vec2(float(row[0]), float(row[1])),
+            str(row[2]),
+            int(row[3]),
+            None if len(row) < 5 or row[4] is None else int(row[4]),
+            bool(row[5]) if len(row) > 5 else False,
+        )
+        for row in state["pick"]
     ]
     manager.cats = [
         Cat(Vec2(float(x), float(y)), int(owner), int(ttl), int(cd))
         for x, y, owner, ttl, cd in state["cats"]
+    ]
+    manager.companions = [
+        Companion(
+            Paddle(Rect(float(x), float(y), float(half_w), float(half_h)), str(axis)),
+            int(owner),
+            int(ttl),
+        )
+        for x, y, half_w, half_h, axis, owner, ttl in state.get("companions", [])
+    ]
+    manager.missiles = [
+        Missile(
+            Vec2(float(x), float(y)),
+            Vec2(float(vx), float(vy)),
+            int(owner),
+            int(ttl),
+            float(radius),
+        )
+        for x, y, vx, vy, owner, ttl, radius in state.get("missiles", [])
     ]
     for pickup in manager.pickups:
         if pickup.name not in manager.specs:
@@ -107,13 +173,15 @@ def _apply(world: World, state: dict[str, Any]) -> None:
 
 
 def _ball(row: list[Any], radius: float) -> Ball:
-    x, y, vx, vy, toucher, held = row
+    x, y, vx, vy, toucher, held = row[:6]
     return Ball(
         Vec2(float(x), float(y)),
         Vec2(float(vx), float(vy)),
         radius,
         toucher=None if toucher is None else int(toucher),
         held_by=None if held is None else int(held),
+        rotation=float(row[6]) if len(row) > 6 else 0.0,
+        spin_rate=float(row[7]) if len(row) > 7 else 0.0,
     )
 
 
@@ -152,6 +220,12 @@ def blend(a: dict[str, Any], b: dict[str, Any], alpha: float) -> dict[str, Any]:
                 [_lerp(p[0], q[0], alpha), _lerp(p[1], q[1], alpha), *q[2:]]
                 for p, q in zip(a["cats"], b["cats"], strict=False)
             ]
+        for key in ("companions", "missiles"):
+            if key in a and key in b and len(a[key]) == len(b[key]):
+                out[key] = [
+                    [_lerp(p[0], q[0], alpha), _lerp(p[1], q[1], alpha), *q[2:]]
+                    for p, q in zip(a[key], b[key], strict=False)
+                ]
         if len(a["obs"]) == len(b["obs"]):
             out["obs"] = [
                 [_lerp(p[0], q[0], alpha), _lerp(p[1], q[1], alpha), *q[2:]]

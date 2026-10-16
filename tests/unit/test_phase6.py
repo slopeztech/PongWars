@@ -23,7 +23,8 @@ from pongwars.render.renderer import LOW_H, LOW_W
 from pongwars.ui.core import AppContext
 from pongwars.ui.screens import (
     AppearanceScreen,
-    HowToPlayScreen,
+    HelpMenuScreen,
+    LanMenuScreen,
     MainMenuScreen,
     MatchScreen,
     PauseScreen,
@@ -238,23 +239,15 @@ def test_main_menu_entries(ctx: AppContext) -> None:
     ctx.stack.pop()
     menu.handle_event(key(pygame.K_DOWN))
     menu.handle_event(key(pygame.K_RETURN))
-    setup = ctx.stack.top
-    assert isinstance(setup, SetupScreen)
-    assert setup.controllers == ["human", "ai"]
+    assert isinstance(ctx.stack.top, LanMenuScreen)
     ctx.stack.pop()
     menu.handle_event(key(pygame.K_DOWN))
     menu.handle_event(key(pygame.K_RETURN))
-    setup = ctx.stack.top
-    assert isinstance(setup, SetupScreen) and setup.lan
+    assert isinstance(ctx.stack.top, HelpMenuScreen)
     ctx.stack.pop()
-    for _ in range(3):  # join, help, appearance
-        menu.handle_event(key(pygame.K_DOWN))
+    menu.handle_event(key(pygame.K_DOWN))
     menu.handle_event(key(pygame.K_RETURN))
     assert isinstance(ctx.stack.top, AppearanceScreen)
-    ctx.stack.pop()
-    menu.handle_event(key(pygame.K_DOWN))
-    menu.handle_event(key(pygame.K_RETURN))
-    assert isinstance(ctx.stack.top, HowToPlayScreen)
     ctx.stack.pop()
     menu.handle_event(key(pygame.K_DOWN))
     menu.handle_event(key(pygame.K_RETURN))
@@ -300,6 +293,25 @@ def test_setup_cycles_and_options(ctx: AppContext) -> None:
     setup.controllers[0] = "ai"
     config = setup.build_config()
     assert config.extras == ("all",)
+
+
+def test_setup_remembers_last_match_options(ctx: AppContext) -> None:
+    setup = SetupScreen(ctx)
+    setup.mode = "classic"
+    setup.arena = "crossfire"
+    setup.extras = "all"
+    setup.view = "split"
+    setup.room_name = "FRIENDS ROOM"
+    setup.options = {"points_to_win": 9.0}
+    setup._save_last_match()
+
+    restored = SetupScreen(ctx)
+    assert restored.mode == "classic"
+    assert restored.arena == "crossfire"
+    assert restored.extras == "all"
+    assert restored.view == "split"
+    assert restored.room_name == "FRIENDS ROOM"
+    assert restored.options["points_to_win"] == 9.0
 
 
 def test_start_pushes_match_and_flows_to_results(ctx: AppContext) -> None:

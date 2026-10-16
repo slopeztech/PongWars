@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 SAMPLE_RATE = 22050
 PEAK = 32767
-WAVES = ("square", "triangle", "noise")
+WAVES = ("square", "triangle", "noise", "explosion")
 SQUARE_DUTY = 0.5
 FADE_FRACTION = 0.15  # tail of each tone faded out to avoid clicks
 NOISE_SEED = 1234
@@ -57,9 +57,15 @@ def render_tone(spec: ToneSpec, sample_rate: int = SAMPLE_RATE) -> "array[int]":
             level = 1.0 if phase < SQUARE_DUTY else -1.0
         elif spec.wave == "triangle":
             level = 4.0 * abs(phase - 0.5) - 1.0
-        else:
+        elif spec.wave == "noise":
             level = rng.uniform(-1.0, 1.0)
-        envelope = min(1.0, (count - i) / fade)
+            envelope = min(1.0, (count - i) / fade)
+        else:
+            noise = rng.uniform(-1.0, 1.0)
+            level = 0.78 * noise + 0.22 * math.sin(2.0 * math.pi * phase)
+            envelope = min(1.0, i / max(1, int(count * 0.025))) * math.exp(-6.0 * t)
+        if spec.wave in ("square", "triangle"):
+            envelope = min(1.0, (count - i) / fade)
         samples.append(int(PEAK * spec.volume * envelope * level))
     return samples
 

@@ -11,12 +11,14 @@ from pongwars.audio.player import AudioPlayer
 from pongwars.core.i18n import Translator
 from pongwars.core.settings import Settings
 from pongwars.input.controllers import KeyMap
+from pongwars.ui.widgets import MusicNotice
 
 
 class Screen:
     """@brief Base class of every UI screen; draws on the low-resolution surface."""
 
     transparent = False
+    show_music_notice = False
 
     def __init__(self, ctx: "AppContext") -> None:
         """@brief Create a screen.
@@ -124,6 +126,8 @@ class AppContext:
     keymap: KeyMap = field(default_factory=KeyMap)
     stack: ScreenStack = field(default_factory=ScreenStack)
     on_display_change: Callable[[], None] = lambda: None
+    music_notice: MusicNotice = field(default_factory=MusicNotice)
+    music_notice: MusicNotice = field(default_factory=MusicNotice)
 
     def apply_settings(self) -> None:
         """@brief Push the current settings to language, audio and display."""

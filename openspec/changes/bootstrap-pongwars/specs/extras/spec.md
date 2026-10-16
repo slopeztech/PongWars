@@ -48,3 +48,39 @@ Active effects SHALL be visible in the HUD with remaining duration and in the 3D
 #### Scenario: HUD
 - **WHEN** an effect is active
 - **THEN** the HUD shows its icon and a countdown
+
+### Requirement: Score-gap assistance
+When extras are enabled and the score gap reaches three points, the system SHALL offer one reduced targeted pickup at most every 15 seconds, alternating between the losing and leading players. It SHALL only spawn when no pickup is on the table.
+
+#### Scenario: Losing player collects assistance
+- **WHEN** a player's paddle passes over a targeted catch-up pickup
+- **THEN** only that player receives the reduced beneficial effect without the ball touching it
+
+#### Scenario: Catch-up pickups are spaced
+- **WHEN** a score-gap pickup is due while another pickup is already present
+- **THEN** no extra catch-up pickup appears alongside it
+
+### Requirement: Pickup spacing and reduced effects
+The table SHALL hold at most two pickups, spaced at least 24 world units apart. Targeted pickups SHALL expire sooner than ordinary pickups and apply half-duration, reduced-strength effects or one weapon charge.
+
+#### Scenario: Pickup spacing
+- **WHEN** a pickup spawns near an existing pickup
+- **THEN** it is placed at least 24 world units away or its spawn is skipped
+
+### Requirement: Companion defender
+The system SHALL provide a temporary, small AI-controlled companion paddle that resembles its owner's paddle and can collide with the ball to protect the owner's goal.
+
+#### Scenario: Companion intercepts ball
+- **WHEN** a ball reaches the companion paddle
+- **THEN** it rebounds as if hit by the owner and the companion expires after its configured duration
+
+### Requirement: Headbutt and missile weapons
+The system SHALL provide a headbutt weapon that temporarily lunges the paddle toward the table and a two-charge missile weapon that stuns opponents or damages destructible arena obstacles.
+
+#### Scenario: Missile hits obstacle
+- **WHEN** a missile touches a destructible obstacle
+- **THEN** the obstacle loses one hit point and is destroyed when its hit points reach zero
+
+#### Scenario: Missile hits opponent
+- **WHEN** a missile touches an opponent's paddle
+- **THEN** that opponent is briefly stunned and the missile is consumed

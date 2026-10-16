@@ -16,6 +16,10 @@ RECOMPUTE_TICKS = 15
 DEAD_ZONE_FRACTION = 0.25
 FIRE_BASE_CHANCE = 0.05
 FIRE_SKILL_GAIN = 0.3
+SPIN_BASE_CHANCE = 0.1
+SPIN_SKILL_GAIN = 0.5
+SPIN_WINDOW_SECONDS = 0.35
+SPIN_MIN_MOVE = 0.05
 
 
 class AIController:
@@ -47,6 +51,9 @@ class AIController:
         self._now: Observation | None = None
         self._opportunity = 0
         self._pulse = False
+        self._last_move = 0.0
+        self._spin_window = False
+        self._spin_selected = False
 
     def fire_intent(self) -> bool:
         """@brief Fire button state for this tick (call once per tick, after `poll`).
@@ -75,6 +82,41 @@ class AIController:
         self._pulse = True
         return True
 
+    def spin_intent(self) -> bool:
+        """@brief Hold spin near an approaching paddle hit on selected rallies.
+        @return True while the AI has selected spin and is moving its paddle.
+        """
+        obs = self._now
+        if obs is None or not self._approaching(obs):
+            self._spin_window = False
+            return False
+        normal_distance = self._distance_to_paddle(obs)
+        normal_half = obs.paddle.half_w if obs.axis == "y" else obs.paddle.half_h
+        normal_speed = abs(obs.ball_vel.x if obs.axis == "y" else obs.ball_vel.y)
+        if normal_speed == 0.0 or (
+            normal_distance - normal_half - obs.ball_radius
+        ) / normal_speed > SPIN_WINDOW_SECONDS:
+            self._spin_window = False
+            return False
+        if not self._spin_window:
+            self._spin_selected = (
+                self._rng.uniform(0.0, 1.0)
+                <= SPIN_BASE_CHANCE + self.profile.extra_skill * SPIN_SKILL_GAIN
+            )
+            self._spin_window = True
+        return self._spin_selected and abs(self._last_move) > SPIN_MIN_MOVE
+
+    @staticmethod
+    def _approaching(obs: Observation) -> bool:
+        velocity = obs.ball_vel.x if obs.axis == "y" else obs.ball_vel.y
+        return velocity < 0.0 if obs.seat in (0, 2) else velocity > 0.0
+
+    @staticmethod
+    def _distance_to_paddle(obs: Observation) -> float:
+        coordinate = obs.ball_pos.x if obs.axis == "y" else obs.ball_pos.y
+        center = obs.paddle.cx if obs.axis == "y" else obs.paddle.cy
+        return coordinate - center if obs.seat in (0, 2) else center - coordinate
+
     def poll(self) -> float:
         """@brief Movement intent in [-1, 1] for this tick (call exactly once per tick)."""
         now = self._observe()
@@ -91,10 +133,13 @@ class AIController:
             self._age = 0
             self._target = self._strategy(seen, self.profile)
         if self._target is None:
+            self._last_move = 0.0
             return 0.0
         error = self._target + self._noise - now.paddle_pos
         if abs(error) < now.paddle_half * DEAD_ZONE_FRACTION:
+            self._last_move = 0.0
             return 0.0
         wanted = error / (c.PADDLE_SPEED * c.DT)
         cap = self.profile.speed
-        return max(-cap, min(cap, wanted))
+        self._last_move = max(-cap, min(cap, wanted))
+        return self._last_move

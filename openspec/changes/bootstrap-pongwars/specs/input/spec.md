@@ -36,3 +36,17 @@ The input layer SHALL support 2 to 4 seats, including horizontal paddles for the
 #### Scenario: Four seats
 - **WHEN** a 4-player arena is active
 - **THEN** all four seats are drawn or polled independently
+
+### Requirement: Ball spin action
+Each seat SHALL have a distinct spin action key. When held while the paddle is moving, it SHALL apply spin to the ball on its next paddle hit, alter the rebound angle, increase its speed, continuously curve its trajectory according to the spin direction and rate until its next bounce, set the direction and rate of the rendered ball rotation, and use an impact sound distinct from a normal paddle hit. LAN input messages SHALL carry the spin action.
+
+#### Scenario: Spin on paddle impact
+- **WHEN** a player moves their paddle and presses the spin key as the ball hits it
+- **THEN** the ball rebounds faster, follows a curved path in the spin direction until it bounces again, and plays the spin-hit sound
+
+### Requirement: Match countdown
+The game SHALL show 3-2-1 before the first serve of a new match, with each number displayed for half a second.
+
+#### Scenario: Countdown before a new match
+- **WHEN** a new match starts
+- **THEN** the display counts down from 3 to 1 below the arena in 30 simulation ticks per number before the ball is served

@@ -3,17 +3,18 @@
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from pongwars.domain import constants as c
 from pongwars.domain.config import ConfigError
-from pongwars.domain.entities import Ball, Cat
+from pongwars.domain.entities import Ball, Cat, Companion, Missile
 from pongwars.domain.events import (
     CatPounced,
     EffectApplied,
     EffectExpired,
     Event,
+    MissileHit,
     PickupCollected,
     PickupSpawned,
     ShieldUsed,
@@ -21,6 +22,7 @@ from pongwars.domain.events import (
 )
 from pongwars.domain.extras.base import CATEGORIES, EFFECTS, Effect, EffectSpec, Mods, load_specs
 from pongwars.domain.extras.effects import opponents
+from pongwars.domain.physics import sweep_circle_rect
 from pongwars.domain.vec import Vec2
 
 if TYPE_CHECKING:
@@ -36,6 +38,8 @@ class Pickup:
     pos: Vec2
     name: str
     ttl: int
+    target: int | None = None
+    reduced: bool = False
 
 
 class ExtrasManager:
@@ -50,10 +54,14 @@ class ExtrasManager:
         self.specs = load_specs()
         self.pickups: list[Pickup] = []
         self.cats: list[Cat] = []
+        self.companions: list[Companion] = []
+        self.missiles: list[Missile] = []
         self.active: list[list[Effect]] = [[] for _ in range(world.players)]
         self.weapons: list[tuple[str, int] | None] = [None] * world.players
         self.spawn_names = self._spawnable(world.config.extras)
         self._spawn_timer = round(world.config.extras_interval * c.TICK_RATE)
+        self._comeback_timer = c.COMEBACK_PICKUP_INTERVAL_TICKS
+        self._comeback_penalty_next = False
         self._mods = [Mods() for _ in range(world.players)]
 
     def _spawnable(self, selection: tuple[str, ...]) -> list[str]:
@@ -92,7 +100,7 @@ class ExtrasManager:
         self.active[player].remove(effect)
         events.append(EffectExpired(player, effect.name))
 
-    def apply(self, name: str, player: int, events: list[Event]) -> None:
+    def apply(self, name: str, player: int, events: list[Event], reduced: bool = False) -> None:
         """@brief Apply an effect as if `player` had collected it.
 
         Powers flagged `on_opponents` and penalties (when configured so) hit the opponents.
@@ -111,15 +119,19 @@ class ExtrasManager:
         if effect_class.single_target:
             targets = targets[:1]
         for target in targets:
-            self._apply_one(effect_class(spec), spec, target, events)
+            self._apply_one(effect_class(spec), spec, target, events, reduced)
 
-    def apply_direct(self, name: str, player: int, events: list[Event]) -> None:
+    def apply_direct(
+        self, name: str, player: int, events: list[Event], reduced: bool = False
+    ) -> None:
         """@brief Apply an effect to exactly `player`, ignoring the penalty-target setting.
         @param name Registered effect name.
         @param player Seat that receives the effect.
         @param events Event list to append to.
         """
-        self._apply_one(EFFECTS.get(name)(self.specs[name]), self.specs[name], player, events)
+        self._apply_one(
+            EFFECTS.get(name)(self.specs[name]), self.specs[name], player, events, reduced
+        )
 
     def clear_penalties(self, player: int, events: list[Event]) -> None:
         """@brief Remove every penalty and status effect of a player.
@@ -166,9 +178,83 @@ class ExtrasManager:
         cat.cooldown = c.CAT_COOLDOWN_TICKS
         events.append(CatPounced(ball.pos.x, ball.pos.y))
 
+    def update_companions(self) -> None:
+        """@brief Move companion paddles towards the ball's current path and age them."""
+        for companion in list(self.companions):
+            companion.ttl -= 1
+            if companion.ttl <= 0 or not self._world.alive[companion.owner]:
+                self.companions.remove(companion)
+                continue
+            paddle = companion.paddle
+            target = self._world.ball.pos.y if paddle.axis == "y" else self._world.ball.pos.x
+            position = paddle.rect.cy if paddle.axis == "y" else paddle.rect.cx
+            speed = c.COMPANION_SPEED * c.DT
+            extent = c.FIELD_HEIGHT if paddle.axis == "y" else c.FIELD_WIDTH
+            paddle.move(max(-speed, min(speed, target - position)), extent)
+            owner_paddle = self._world.paddles[companion.owner]
+            body = owner_paddle.rect
+            helper = paddle.rect
+            if (
+                abs(body.cx - helper.cx) < body.half_w + helper.half_w
+                and abs(body.cy - helper.cy) < body.half_h + helper.half_h
+            ):
+                owner_pos = body.cy if paddle.axis == "y" else body.cx
+                helper_pos = helper.cy if paddle.axis == "y" else helper.cx
+                direction = 1.0 if helper_pos >= owner_pos else -1.0
+                paddle.move(direction * speed * 0.2, extent)
+
+    def update_missiles(self, events: list[Event]) -> None:
+        """@brief Move missiles, damaging obstacles or stunning the first opponent hit."""
+        world = self._world
+        for missile in list(self.missiles):
+            missile.ttl -= 1
+            disp = missile.vel * c.DT
+            best_t = 1.0
+            obstacle_hit: int | None = None
+            player_hit: int | None = None
+            for index, obstacle in enumerate(world.obstacles):
+                if not obstacle.active:
+                    continue
+                hit = sweep_circle_rect(missile.pos, disp, missile.radius, obstacle.rect)
+                if hit is not None and hit.t <= best_t:
+                    best_t, obstacle_hit, player_hit = hit.t, index, None
+            for seat, paddle in enumerate(world.paddles):
+                if seat == missile.owner or not world.alive[seat]:
+                    continue
+                hit = sweep_circle_rect(missile.pos, disp, missile.radius, paddle.rect)
+                if hit is not None and hit.t < best_t:
+                    best_t, obstacle_hit, player_hit = hit.t, None, seat
+            missile.pos = missile.pos + disp * best_t
+            if obstacle_hit is not None:
+                world.destroy_obstacle(obstacle_hit, events)
+                events.append(MissileHit(missile.owner, missile.pos.x, missile.pos.y, None))
+                self.missiles.remove(missile)
+            elif player_hit is not None:
+                self.apply_direct("stun", player_hit, events)
+                events.append(MissileHit(missile.owner, missile.pos.x, missile.pos.y, player_hit))
+                self.missiles.remove(missile)
+            elif missile.ttl <= 0:
+                self.missiles.remove(missile)
+            else:
+                missile.pos = missile.pos + disp * (1.0 - best_t)
+
     def _apply_one(
-        self, effect: Effect, spec: EffectSpec, player: int, events: list[Event]
+        self,
+        effect: Effect,
+        spec: EffectSpec,
+        player: int,
+        events: list[Event],
+        reduced: bool = False,
     ) -> None:
+        if reduced:
+            scale = c.COMEBACK_EFFECT_SCALE
+            spec = replace(
+                spec,
+                duration=spec.duration * scale,
+                magnitude=1.0 + (spec.magnitude - 1.0) * scale,
+                ammo=max(1, round(spec.ammo * scale)) if spec.ammo else 0,
+            )
+            effect = EFFECTS.get(spec.name)(spec)
         events.append(EffectApplied(player, spec.name))
         if spec.category == "weapon":
             slot = self.weapons[player]
@@ -181,6 +267,10 @@ class ExtrasManager:
         for current in effects:
             if current.name == spec.name:
                 current.remaining = effect.remaining
+                if spec.name == "companion":
+                    for ally in self.companions:
+                        if ally.owner == player:
+                            ally.ttl = current.remaining
                 return
         effects.append(effect)
         limited = [e for e in effects if e.category != "status"]
@@ -232,15 +322,42 @@ class ExtrasManager:
             self._spawn_timer = round(self._world.config.extras_interval * c.TICK_RATE)
             if len(self.pickups) < c.PICKUP_MAX_ON_TABLE:
                 self._spawn(events)
+        self._comeback_timer -= 1
+        if self._comeback_timer <= 0:
+            self._comeback_timer = c.COMEBACK_PICKUP_INTERVAL_TICKS
+            if not self.pickups:
+                self._spawn_comeback(events)
         for pickup in list(self.pickups):
             pickup.ttl -= 1
-            owner = self._collector(pickup)
+            owner = (
+                self._paddle_collector(pickup)
+                if pickup.target is not None
+                else self._collector(pickup)
+            )
             if owner is not None:
                 self.pickups.remove(pickup)
                 events.append(PickupCollected(owner, pickup.name))
-                self.apply(pickup.name, owner, events)
+                if pickup.target is not None:
+                    if self.specs[pickup.name].category == "penalty":
+                        self.apply_direct(pickup.name, owner, events, reduced=pickup.reduced)
+                    else:
+                        self.apply(pickup.name, owner, events, reduced=pickup.reduced)
+                else:
+                    self.apply(pickup.name, owner, events)
             elif pickup.ttl <= 0:
                 self.pickups.remove(pickup)
+
+    def _paddle_collector(self, pickup: Pickup) -> int | None:
+        seat = pickup.target
+        if seat is None or not self._world.alive[seat]:
+            return None
+        rect = self._world.paddles[seat].rect
+        if (
+            abs(rect.cx - pickup.pos.x) <= rect.half_w + c.PICKUP_RADIUS
+            and abs(rect.cy - pickup.pos.y) <= rect.half_h + c.PICKUP_RADIUS
+        ):
+            return seat
+        return None
 
     def _collector(self, pickup: Pickup) -> int | None:
         for ball in self._world.balls:
@@ -261,24 +378,82 @@ class ExtrasManager:
                 name = candidate
                 break
             roll -= weight
-        pos = Vec2(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2)
+        pos: Vec2 | None = None
         for _ in range(c.PICKUP_PLACEMENT_TRIES):
-            pos = Vec2(
+            candidate_pos = Vec2(
                 world.rng.uniform(
                     c.FIELD_WIDTH * c.PICKUP_AREA_X[0], c.FIELD_WIDTH * c.PICKUP_AREA_X[1]
                 ),
                 world.rng.uniform(*c.PICKUP_AREA_Y),
             )
-            if not self._blocked(pos):
+            if not self._blocked(candidate_pos):
+                pos = candidate_pos
                 break
+        if pos is None:
+            return
         self.pickups.append(Pickup(pos, name, c.PICKUP_LIFETIME_TICKS))
+        events.append(PickupSpawned(name))
+
+    def _spawn_comeback(self, events: list[Event]) -> None:
+        world = self._world
+        if not self.spawn_names or len(world.scores) < 2:
+            return
+        low, high = min(world.scores), max(world.scores)
+        if high - low < c.COMEBACK_SCORE_GAP:
+            return
+        losing = [i for i, score in enumerate(world.scores) if score == low and world.alive[i]]
+        leading = [i for i, score in enumerate(world.scores) if score == high and world.alive[i]]
+        if not losing or not leading:
+            return
+        helpful = [
+            name for name in self.spawn_names if self.specs[name].category in ("power", "weapon")
+        ]
+        harmful = [name for name in self.spawn_names if self.specs[name].category == "penalty"]
+        if len(self.pickups) >= c.PICKUP_MAX_ON_TABLE:
+            return
+        offer_help = not self._comeback_penalty_next
+        target = losing[0] if offer_help else leading[0]
+        candidates = helpful if offer_help else harmful
+        if not candidates:
+            candidates = harmful if offer_help else helpful
+            target = leading[0] if offer_help else losing[0]
+        if not candidates:
+            return
+        paddle = world.paddles[target]
+        clearance = (
+            c.PICKUP_RADIUS
+            + (paddle.rect.half_h if paddle.axis == "y" else paddle.rect.half_w)
+            + 4.0
+        )
+        sign = -1.0 if world.rng.randint(0, 1) else 1.0
+        if paddle.axis == "y":
+            coordinate = min(
+                max(paddle.rect.cy + sign * clearance, c.PICKUP_RADIUS),
+                c.FIELD_HEIGHT - c.PICKUP_RADIUS,
+            )
+            pos = Vec2(paddle.rect.cx, coordinate)
+        else:
+            coordinate = min(
+                max(paddle.rect.cx + sign * clearance, c.PICKUP_RADIUS),
+                c.FIELD_WIDTH - c.PICKUP_RADIUS,
+            )
+            pos = Vec2(coordinate, paddle.rect.cy)
+        if self._blocked(pos):
+            return
+        name = candidates[world.rng.randint(0, len(candidates) - 1)]
+        self.pickups.append(Pickup(pos, name, c.COMEBACK_PICKUP_TTL, target=target, reduced=True))
+        self._comeback_penalty_next = not self._comeback_penalty_next
         events.append(PickupSpawned(name))
 
     def _blocked(self, pos: Vec2) -> bool:
         margin = c.PICKUP_RADIUS
-        return any(
+        blocked_by_obstacle = any(
             abs(pos.x - o.rect.cx) <= o.rect.half_w + margin
             and abs(pos.y - o.rect.cy) <= o.rect.half_h + margin
             for o in self._world.obstacles
             if o.active
         )
+        too_close_to_pickup = any(
+            (pos - pickup.pos).length() < c.PICKUP_MIN_SEPARATION for pickup in self.pickups
+        )
+        return blocked_by_obstacle or too_close_to_pickup

@@ -8,10 +8,11 @@ import pygame
 
 from pongwars.ai import AIController, Observation
 from pongwars.core.loop import FixedStepLoop
+from pongwars.core.settings import PADDLE_COLOR_COUNT, PADDLE_SKIN_COUNT
 from pongwars.domain import constants as c
 from pongwars.domain.config import MatchConfig
 from pongwars.domain.world import Phase
-from pongwars.input.controllers import FIRE_KEYS, KeyboardInput
+from pongwars.input.controllers import FIRE_KEYS, SPIN_KEYS, KeyboardInput
 from pongwars.net.client import ClientSession, ClientState
 from pongwars.net.discovery import Discovery, HostInfo
 from pongwars.net.host import HostSession, clean_name
@@ -29,7 +30,10 @@ from pongwars.ui.screens import (
     MenuScreen,
     ResultsScreen,
     _centered,
+    _centered_title,
     _hint,
+    _menu_backdrop,
+    _overlay_panel,
     _title,
 )
 from pongwars.ui.widgets import MenuItem
@@ -66,7 +70,11 @@ def _udp() -> Transport:
     return UdpTransport(0)
 
 
-def _render_settings(ctx: AppContext) -> RenderSettings:
+def _render_settings(
+    ctx: AppContext,
+    colors: list[int] | None = None,
+    skins: list[int] | None = None,
+) -> RenderSettings:
     s = ctx.settings
     return RenderSettings(
         particles=s.particles,
@@ -75,8 +83,11 @@ def _render_settings(ctx: AppContext) -> RenderSettings:
         scale=1,
         view="split" if s.view == "split" else "shared",
         background=s.background,
-        paddle_colors=tuple(s.paddle_colors),
-        paddle_skins=tuple(s.paddle_skins),
+        ball_style=s.ball_style,
+        trail_style=s.trail_style,
+        field_style=s.field_style,
+        paddle_colors=tuple(s.paddle_colors if colors is None else colors),
+        paddle_skins=tuple(s.paddle_skins if skins is None else skins),
     )
 
 
@@ -119,12 +130,14 @@ class LanLobbyScreen(MenuScreen):
         config: MatchConfig,
         view: str,
         transport: Transport | None = None,
+        room_name: str | None = None,
     ) -> None:
         """@brief Open the game port and wait for players.
         @param ctx Application context.
         @param config Match configuration (remote seats wait for clients).
         @param view Camera mode of the host.
         @param transport Datagram endpoint (UDP on the game port when omitted).
+        @param room_name Name shown in LAN discovery.
         """
         super().__init__(ctx)
         self.config = config
@@ -136,15 +149,64 @@ class LanLobbyScreen(MenuScreen):
         except OSError:
             self.error = True
         else:
-            self.host = HostSession(config, ctx.settings.player_name, endpoint)
+            self.host = HostSession(
+                config,
+                ctx.settings.player_name,
+                endpoint,
+                room_name=room_name,
+                colors=ctx.settings.paddle_colors,
+                skins=ctx.settings.paddle_skins,
+            )
         self.address = f"{local_ip()}:{DEFAULT_PORT}"
-        t = ctx.t
-        rows = [MenuItem(lambda: t("lan.lobby.start"), on_activate=self.start)]
-        self.menu.set_items(rows if self.host else [])
+        self._open_seats = tuple(self.host.open_seats) if self.host else ()
+        self.rebuild()
+
+    def rebuild(self) -> None:
+        """@brief Refresh cosmetic controls and gate start on all remote seats."""
+        t = self.ctx.t
+        if self.host is None:
+            self.menu.set_items([])
+            return
+        self.menu.set_items(
+            [
+                MenuItem(
+                    lambda: t("appearance.color", number=1),
+                    lambda: t(f"color.{self.host.colors[0]}"),
+                    on_adjust=lambda step: self._adjust_cosmetics(0, step),
+                ),
+                MenuItem(
+                    lambda: t("appearance.skin", number=1),
+                    lambda: t(f"skin.{self.host.skins[0]}"),
+                    on_adjust=lambda step: self._adjust_cosmetics(1, step),
+                ),
+                MenuItem(
+                    lambda: t("lan.lobby.start"),
+                    on_activate=self.start,
+                    enabled=not self.host.open_seats,
+                ),
+            ]
+        )
+
+    def _adjust_cosmetics(self, kind: int, step: int) -> None:
+        if self.host is None:
+            return
+        settings = self.ctx.settings
+        if kind == 0:
+            value = (self.host.colors[0] + step) % PADDLE_COLOR_COUNT
+            self.host.set_cosmetics(0, color=value)
+            settings.paddle_colors[0] = value
+        else:
+            value = (self.host.skins[0] + step) % PADDLE_SKIN_COUNT
+            self.host.set_cosmetics(0, skin=value)
+            settings.paddle_skins[0] = value
+        settings.save()
+        self.rebuild()
 
     def start(self) -> None:
-        """@brief Start now; seats nobody took are played by the AI."""
+        """@brief Start once every configured remote seat has joined."""
         if self.host is None:
+            return
+        if self.host.open_seats:
             return
         self.host.start()
         self.ctx.stack.replace(LanHostMatchScreen(self.ctx, self.host, self.view))
@@ -161,6 +223,10 @@ class LanLobbyScreen(MenuScreen):
         """
         if self.host is not None:
             self.host.poll()
+            open_seats = tuple(self.host.open_seats)
+            if open_seats != self._open_seats:
+                self._open_seats = open_seats
+                self.rebuild()
 
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Draw the roster and the address clients can use.
@@ -172,7 +238,13 @@ class LanLobbyScreen(MenuScreen):
             _centered(surface, t("lan.lobby.port_busy"), 60, pal.RED)
             _hint(self.ctx, surface)
             return
-        _centered(surface, t("lan.lobby.address", address=self.address), 30, pal.LIGHT_GREY)
+        _centered(
+            surface,
+            t("lan.lobby.room", name=self.host.room_name),
+            27,
+            pal.YELLOW,
+        )
+        _centered(surface, t("lan.lobby.address", address=self.address), 37, pal.LIGHT_GREY)
         open_seats = set(self.host.open_seats)
         for seat, name in enumerate(self.host.names()):
             if name:
@@ -186,10 +258,17 @@ class LanLobbyScreen(MenuScreen):
                 surface,
                 f"{t('hud.player', number=seat + 1)}  {text}",
                 LIST_X,
-                46 + seat * 10,
+                47 + seat * 9,
                 color,
             )
-        self.menu.draw(surface, LIST_X, 100, LIST_W - 2 * LIST_X)
+            draw_text(
+                surface,
+                f"{t(f'color.{self.host.colors[seat]}')} / {t(f'skin.{self.host.skins[seat]}')}",
+                160,
+                47 + seat * 9,
+                pal.LIGHT_GREY,
+            )
+        self.menu.draw(surface, LIST_X, 88, LIST_W - 2 * LIST_X)
         _centered(surface, t("lan.lobby.hint"), HINT_Y, pal.LIGHT_GREY)
 
 
@@ -236,8 +315,8 @@ class LanJoinScreen(MenuScreen):
         for info in self.hosts:
             items.append(
                 MenuItem(
-                    lambda info=info: info.name,  # type: ignore[misc]
-                    lambda info=info: f"{info.joined}/{info.players}",  # type: ignore[misc]
+                    lambda info=info: info.room_name,  # type: ignore[misc]
+                    lambda info=info: f"{info.name} {info.joined}/{info.players}",  # type: ignore[misc]
                     on_activate=lambda info=info: self.connect(info.addr),  # type: ignore[misc]
                 )
             )
@@ -342,7 +421,7 @@ class LanJoinScreen(MenuScreen):
             return
         if self.discovery is not None:
             found = self.discovery.poll()
-            key = tuple((h.name, h.addr, h.joined) for h in found)
+            key = tuple((h.room_name, h.name, h.addr, h.joined) for h in found)
             if key != self._shown:
                 self._shown = key
                 self.hosts = found
@@ -359,6 +438,11 @@ class LanJoinScreen(MenuScreen):
             if self.discovery is not None:
                 self.discovery.close()
             self.ctx.stack.replace(LanClientMatchScreen(self.ctx, client))
+        elif client.state is ClientState.LOBBY:
+            self.client = None
+            if self.discovery is not None:
+                self.discovery.close()
+            self.ctx.stack.replace(LanClientLobbyScreen(self.ctx, client))
         elif client.state is ClientState.REJECTED:
             self.status = t(f"lan.reject.{client.reject_reason}")
             self.client = None
@@ -367,9 +451,6 @@ class LanJoinScreen(MenuScreen):
             self.status = t("lan.join.timeout")
             self.client = None
             self.rebuild()
-        elif client.state is ClientState.LOBBY:
-            self.status = t("lan.join.joined", seat=client.seat + 1)
-
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Draw the host list, fields and status.
         @param surface Low-resolution target.
@@ -383,6 +464,110 @@ class LanJoinScreen(MenuScreen):
             HINT_Y,
             pal.LIGHT_GREY,
         )
+
+
+class LanClientLobbyScreen(MenuScreen):
+    """@brief Client lobby: shows the shared roster and lets the player customize."""
+
+    title_key = "lan.lobby.title"
+
+    def __init__(self, ctx: AppContext, client: ClientSession) -> None:
+        super().__init__(ctx)
+        self.client = client
+        self._roster_state = self._current_roster_state()
+        self.rebuild()
+
+    def _current_roster_state(self) -> tuple[object, ...]:
+        return (
+            tuple(self.client.roster),
+            tuple(self.client.colors),
+            tuple(self.client.skins),
+        )
+
+    def rebuild(self) -> None:
+        t = self.ctx.t
+        seat = self.client.seat
+        self.menu.set_items(
+            [
+                MenuItem(
+                    lambda: t("appearance.color", number=seat + 1),
+                    lambda: t(
+                        f"color.{self.client.colors[seat]}"
+                        if seat < len(self.client.colors)
+                        else "color.0"
+                    ),
+                    on_adjust=self._adjust_color,
+                ),
+                MenuItem(
+                    lambda: t("appearance.skin", number=seat + 1),
+                    lambda: t(
+                        f"skin.{self.client.skins[seat]}"
+                        if seat < len(self.client.skins)
+                        else "skin.0"
+                    ),
+                    on_adjust=self._adjust_skin,
+                ),
+                MenuItem(lambda: t("lan.join.cancel"), on_activate=self.back),
+            ]
+        )
+
+    def _adjust_color(self, step: int) -> None:
+        seat = self.client.seat
+        current = self.client.colors[seat] if seat < len(self.client.colors) else 0
+        color = (current + step) % PADDLE_COLOR_COUNT
+        skin = self.client.skins[seat] if seat < len(self.client.skins) else 0
+        self.client.set_cosmetics(color=color, skin=skin)
+        self.ctx.settings.paddle_colors[seat] = color
+        self.ctx.settings.save()
+
+    def _adjust_skin(self, step: int) -> None:
+        seat = self.client.seat
+        current = self.client.skins[seat] if seat < len(self.client.skins) else 0
+        skin = (current + step) % PADDLE_SKIN_COUNT
+        color = self.client.colors[seat] if seat < len(self.client.colors) else 0
+        self.client.set_cosmetics(color=color, skin=skin)
+        self.ctx.settings.paddle_skins[seat] = skin
+        self.ctx.settings.save()
+
+    def back(self) -> None:
+        self.client.close()
+        self.ctx.stack.pop_to(MainMenuScreen)
+
+    def update(self, dt: float) -> None:
+        self.client.poll()
+        if self.client.state is ClientState.PLAYING and self.client.world is not None:
+            self.ctx.stack.replace(LanClientMatchScreen(self.ctx, self.client))
+        elif self.client.state in (ClientState.TIMEOUT, ClientState.CLOSED):
+            self.ctx.stack.replace(LanNoticeScreen(self.ctx, "lan.join.timeout"))
+        elif self.client.state is ClientState.REJECTED:
+            self.ctx.stack.replace(
+                LanNoticeScreen(self.ctx, f"lan.reject.{self.client.reject_reason}")
+            )
+        else:
+            roster_state = self._current_roster_state()
+            if roster_state != self._roster_state:
+                self._roster_state = roster_state
+                self.rebuild()
+
+    def draw(self, surface: pygame.Surface) -> None:
+        t = self.ctx.t
+        _title(self.ctx, surface, self.title_key)
+        for seat, name in enumerate(self.client.roster):
+            label = name or t("lan.lobby.waiting")
+            if seat < len(self.client.colors):
+                label += f"  {t(f'color.{self.client.colors[seat]}')} / "
+                label += t(f"skin.{self.client.skins[seat]}")
+            color = pal.PLAYER_COLORS[seat % len(pal.PLAYER_COLORS)]
+            draw_text(
+                surface,
+                f"{t('hud.player', number=seat + 1)}  {label}",
+                LIST_X,
+                40 + seat * 10,
+                color,
+            )
+        _centered(surface, t("lan.client.waiting"), 88, pal.LIGHT_GREY)
+        self.menu.draw(surface, LIST_X, 100, LIST_W - 2 * LIST_X)
+        _hint(self.ctx, surface)
 
 
 class LanQuitScreen(MenuScreen):
@@ -418,7 +603,8 @@ class LanQuitScreen(MenuScreen):
         shade = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
         shade.fill((0, 0, 0, 150))
         surface.blit(shade, (0, 0))
-        _centered(surface, self.ctx.t(self.title_key), 40, pal.ORANGE, 2)
+        _overlay_panel(surface)
+        _centered_title(surface, self.ctx.t(self.title_key), 40)
         self.menu.draw(surface, 100, 80, 120)
 
 
@@ -470,7 +656,8 @@ class LanDropScreen(MenuScreen):
         shade = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
         shade.fill((0, 0, 0, 150))
         surface.blit(shade, (0, 0))
-        _centered(surface, self.ctx.t(self.title_key), 40, pal.ORANGE, 2)
+        _overlay_panel(surface)
+        _centered_title(surface, self.ctx.t(self.title_key), 40)
         _centered(surface, self.ctx.t("lan.drop.text"), 62, pal.WHITE)
         self.menu.draw(surface, 90, 84, 140)
 
@@ -487,11 +674,17 @@ class LanHostMatchScreen(MatchScreen):
         super().__init__(ctx, host.config, view)
         assert host.world is not None  # noqa: S101
         self.host = host
+        self.renderer = Renderer(
+            _render_settings(ctx, host.colors, host.skins),
+            host.config.seed,
+            ctx.translator,
+        )
         self.world = host.world
         self.local = KeyboardInput(ctx.keymap.get(0), pygame.key.get_pressed)
         self.bots: dict[int, AIController] = {}
         self._drop_shown = False
         self._fire_tap = False
+        self._spin_tap = False
 
     def _bot(self, seat: int) -> AIController:
         if seat not in self.bots:
@@ -504,14 +697,16 @@ class LanHostMatchScreen(MatchScreen):
             )
         return self.bots[seat]
 
-    def _local_input(self, seat: int) -> tuple[float, bool]:
+    def _local_input(self, seat: int) -> tuple[float, bool, bool]:
         if seat == 0:
             fire = self._fire_tap or bool(pygame.key.get_pressed()[FIRE_KEYS[0]])
+            spin = self._spin_tap or bool(pygame.key.get_pressed()[SPIN_KEYS[0]])
             self._fire_tap = False
-            return self.local.poll(), fire
+            self._spin_tap = False
+            return self.local.poll(), fire, spin
         bot = self._bot(seat)
         move = bot.poll()
-        return move, bot.fire_intent()
+        return move, bot.fire_intent(), bot.spin_intent()
 
     def _step(self) -> None:
         events = self.host.step(self._local_input)
@@ -526,6 +721,8 @@ class LanHostMatchScreen(MatchScreen):
             self.ctx.stack.push(LanQuitScreen(self.ctx, lambda: self.host.close("closed")))
         elif event.type == pygame.KEYDOWN and event.key == FIRE_KEYS[0]:
             self._fire_tap = True
+        elif event.type == pygame.KEYDOWN and event.key == SPIN_KEYS[0]:
+            self._spin_tap = True
 
     def update(self, dt: float) -> None:
         """@brief Serve the network and advance the match.
@@ -562,16 +759,23 @@ class LanClientMatchScreen(Screen):
         self.client = client
         self.config = client.config
         self.world = client.world
-        self.renderer = Renderer(_render_settings(ctx), client.config.seed, ctx.translator)
+        self.renderer = Renderer(
+            _render_settings(ctx, client.colors, client.skins),
+            client.config.seed,
+            ctx.translator,
+        )
         self.input = KeyboardInput(ctx.keymap.get(0), pygame.key.get_pressed)
         self.loop = FixedStepLoop(self._tick, c.DT)
         self._fire_tap = False
-        ctx.audio.start_music("match", seed=client.config.seed)
+        self._spin_tap = False
+        ctx.audio.start_music("match")
 
     def _tick(self) -> None:
         fire = self._fire_tap or bool(pygame.key.get_pressed()[FIRE_KEYS[0]])
+        spin = self._spin_tap or bool(pygame.key.get_pressed()[SPIN_KEYS[0]])
         self._fire_tap = False
-        self.client.send_input(self.input.poll(), fire)
+        self._spin_tap = False
+        self.client.send_input(self.input.poll(), fire, spin)
 
     def handle_event(self, event: pygame.event.Event) -> None:
         """@brief Esc opens the leave menu.
@@ -581,6 +785,8 @@ class LanClientMatchScreen(Screen):
             self.ctx.stack.push(LanQuitScreen(self.ctx, self.client.close))
         elif event.type == pygame.KEYDOWN and event.key == FIRE_KEYS[0]:
             self._fire_tap = True
+        elif event.type == pygame.KEYDOWN and event.key == SPIN_KEYS[0]:
+            self._spin_tap = True
 
     def update(self, dt: float) -> None:
         """@brief Receive state, send inputs and detect the end of the match.
@@ -621,6 +827,8 @@ class LanClientMatchScreen(Screen):
 class LanHelpScreen(Screen):
     """@brief Paged explanation of LAN play."""
 
+    show_music_notice = True
+
     def __init__(self, ctx: AppContext) -> None:
         """@brief Create the screen on the first page.
         @param ctx Application context.
@@ -648,8 +856,8 @@ class LanHelpScreen(Screen):
         @param surface Low-resolution target.
         """
         t = self.ctx.t
-        surface.fill(pal.NAVY)
-        _centered(surface, t("lanhelp.title"), TITLE_Y - 6, pal.ORANGE, 2)
+        _menu_backdrop(surface)
+        _centered_title(surface, t("lanhelp.title"), TITLE_Y - 6)
         _centered(surface, t(f"lanhelp.{self.page}.title"), 36, pal.YELLOW, 2)
         for i in range(1, HELP_LINES + 1):
             key = f"lanhelp.{self.page}.line{i}"

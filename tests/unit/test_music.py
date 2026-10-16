@@ -10,6 +10,7 @@ import pytest
 from pongwars.audio.jukebox import Jukebox, Library
 from pongwars.audio.sequencer import render_song
 from pongwars.audio.songfile import SongError, parse_note_token, parse_song
+from pongwars.ui.widgets import MusicNotice
 
 BASIC = """
 title = Test
@@ -167,6 +168,47 @@ def test_jukebox_restart_is_a_no_op_and_stop_clears() -> None:
     box.stop()
     assert box.context == "" and not sink.playing
     box.update()
+
+
+def test_jukebox_avoids_previous_song_for_random_start() -> None:
+    box, _, _ = make_jukebox()
+    first = box.start("match", seed=3, avoid_previous="a")
+    assert first == "b"
+    assert box.current == "b"
+
+
+def test_jukebox_does_not_repeat_last_song_after_context_switch() -> None:
+    box, _, _ = make_jukebox()
+    previous = box.start("menu", first="m")
+    box.start("match", first="a")
+
+    next_menu_song = box.start("menu")
+
+    assert next_menu_song != previous
+
+
+def test_jukebox_does_not_repeat_same_song_across_contexts() -> None:
+    box, _, _ = make_jukebox()
+    previous = box.start("menu", first="b")
+
+    next_song = box.start("match", seed=0)
+
+    assert previous == "b"
+    assert next_song != previous
+
+
+def test_music_notice_lasts_five_seconds_and_restarts_for_new_song() -> None:
+    notice = MusicNotice()
+    menu_song = ("menu", "song-a")
+    notice.update(menu_song, ("Pixel Dawn", "Bit Bard"), 0.0)
+    assert notice.visible
+    notice.update(menu_song, ("Pixel Dawn", "Bit Bard"), 4.99)
+    assert notice.visible
+    notice.update(menu_song, ("Pixel Dawn", "Bit Bard"), 0.01)
+    assert not notice.visible
+
+    notice.update(("match", "song-a"), ("Pixel Dawn", "Bit Bard"), 0.0)
+    assert notice.visible
 
 
 def test_bundled_songs_are_valid() -> None:

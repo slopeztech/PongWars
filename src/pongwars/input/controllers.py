@@ -39,6 +39,7 @@ DEFAULT_BINDINGS: tuple[KeyBinding, ...] = (
 )
 
 FIRE_KEYS: tuple[int, ...] = (pygame.K_d, pygame.K_LEFT, pygame.K_k, pygame.K_KP5)
+SPIN_KEYS: tuple[int, ...] = (pygame.K_a, pygame.K_RIGHT, pygame.K_h, pygame.K_KP4)
 
 
 class KeyMap:
@@ -136,20 +137,30 @@ class GamepadInput:
         return 0.0 if abs(value) < self._deadzone else max(-1.0, min(1.0, value))
 
 
-def collect_inputs(controllers: Sequence[PlayerInput], fire: Sequence[bool] = ()) -> FrameInputs:
+def collect_inputs(
+    controllers: Sequence[PlayerInput],
+    fire: Sequence[bool] = (),
+    spin: Sequence[bool] = (),
+) -> FrameInputs:
     """@brief Poll every seat into the simulation's input record.
     @param controllers One input source per seat.
     @param fire Fire button state per seat (missing seats count as released).
+    @param spin Spin button state per seat (missing seats count as released).
     @return The frame inputs.
     """
     moves = tuple(controller.poll() for controller in controllers)
     shots = list(fire)
+    spins = list(spin)
     for seat, controller in enumerate(controllers):
         intent = getattr(controller, "fire_intent", None)
         if intent is not None:
             shots += [False] * (seat + 1 - len(shots))
             shots[seat] = shots[seat] or bool(intent())
-    return FrameInputs(moves, tuple(shots))
+        spin_intent = getattr(controller, "spin_intent", None)
+        if spin_intent is not None:
+            spins += [False] * (seat + 1 - len(spins))
+            spins[seat] = spins[seat] or bool(spin_intent())
+    return FrameInputs(moves, tuple(shots), tuple(spins))
 
 
 def poll_fire(
@@ -160,6 +171,19 @@ def poll_fire(
     @param pressed Callable returning the key state (e.g. `pygame.key.get_pressed`).
     @param keys Fire key per seat.
     @return Fire state per seat (always False for non-human seats).
+    """
+    state = pressed()
+    return tuple(human and bool(state[key]) for human, key in zip(seats, keys, strict=False))
+
+
+def poll_spin(
+    seats: Sequence[bool], pressed: Callable[[], Sequence[bool]], keys: Sequence[int] = SPIN_KEYS
+) -> tuple[bool, ...]:
+    """@brief Read the spin buttons of local human seats.
+    @param seats True for each seat controlled by a local human.
+    @param pressed Callable returning current keyboard state.
+    @param keys Spin key per seat.
+    @return Spin state per seat (always False for non-human seats).
     """
     state = pressed()
     return tuple(human and bool(state[key]) for human, key in zip(seats, keys, strict=False))

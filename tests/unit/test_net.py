@@ -117,6 +117,15 @@ def test_snapshot_round_trip() -> None:
         snapshot.apply(mirror, {"tick": 1})
 
 
+def test_snapshot_carries_random_portal_positions() -> None:
+    source = World(MatchConfig(arena="portal", seed=11))
+    mirror = World(MatchConfig(arena="portal", seed=12))
+
+    snapshot.apply(mirror, snapshot.capture(source))
+
+    assert snapshot.capture(mirror)["portals"] == snapshot.capture(source)["portals"]
+
+
 def test_blend_and_events() -> None:
     a = {"balls": [[0, 0, 1, 1, None, None]], "paddles": [], "cats": [], "obs": []}
     b = {"balls": [[10, 0, 1, 1, None, None]], "paddles": [], "cats": [], "obs": []}
@@ -280,6 +289,21 @@ def test_lobby_leave_frees_seat_and_ping() -> None:
     assert spy.poll() == []
 
 
+def test_lobby_cosmetics_sync_into_started_match() -> None:
+    clock, net, host, client = make_pair()
+    pump(clock, net, host, client, 10)
+    assert client.state is ClientState.LOBBY
+    client.set_cosmetics(color=5, skin=2)
+    pump(clock, net, host, client)
+    assert host.colors[1] == 5
+    assert host.skins[1] == 2
+    host.start()
+    client.poll()
+    assert client.state is ClientState.PLAYING
+    assert client.colors == host.colors
+    assert client.skins == host.skins
+
+
 def test_garbage_and_stale_snapshots_are_ignored() -> None:
     clock, net, host, client = make_pair()
     pump(clock, net, host, client, 10)
@@ -299,7 +323,11 @@ def test_discovery_over_memory_network() -> None:
     clock = Clock()
     net = MemoryNetwork()
     host = HostSession(
-        MatchConfig(controllers=("human", "remote")), "lan", net.endpoint("10.0.0.1", PORT), clock
+        MatchConfig(controllers=("human", "remote")),
+        "lan",
+        net.endpoint("10.0.0.1", PORT),
+        clock,
+        room_name="FRIENDS ROOM",
     )
     scanner = Discovery(net.endpoint("10.0.0.3"), PORT, clock)
     scanner.scan()
@@ -309,6 +337,7 @@ def test_discovery_over_memory_network() -> None:
     found = scanner.poll()
     assert [(h.name, h.mode, h.joined) for h in found] == [("LAN", "classic", 0)]
     assert found[0].addr == ("10.0.0.1", PORT)
+    assert found[0].room_name == "FRIENDS ROOM"
     host.start()
     scanner.scan()
     net.advance()

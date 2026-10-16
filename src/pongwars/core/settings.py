@@ -20,6 +20,9 @@ MIN_SCALE = 2
 MAX_SCALE = 8
 VIEW_MODES = ("shared", "split")
 BACKGROUNDS = ("none", "grid", "stars", "rain", "waves", "aurora")
+BALL_STYLES = ("classic", "pixel", "energy", "ring")
+TRAIL_STYLES = ("classic", "pixel", "neon")
+FIELD_STYLES = ("grid", "checker", "neon", "solid")
 PADDLE_COLOR_COUNT = 8
 PADDLE_SKIN_COUNT = 4
 SEATS = 4
@@ -66,10 +69,14 @@ class Settings:
     trail: bool = True
     shake: bool = True
     view: str = "shared"
-    music_track: str = "random"
+    last_menu_track: str = ""
     background: str = "grid"
+    ball_style: str = "classic"
+    trail_style: str = "classic"
+    field_style: str = "grid"
     player_name: str = "PLAYER"
     last_host: str = ""
+    last_match: dict[str, Any] = field(default_factory=dict)
     paddle_colors: list[int] = field(default_factory=lambda: [0, 1, 2, 3])
     paddle_skins: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     keys: dict[str, list[int]] = field(default_factory=dict)
@@ -83,6 +90,12 @@ class Settings:
             self.view = "shared"
         if self.background not in BACKGROUNDS:
             self.background = "grid"
+        if self.ball_style not in BALL_STYLES:
+            self.ball_style = "classic"
+        if self.trail_style not in TRAIL_STYLES:
+            self.trail_style = "classic"
+        if self.field_style not in FIELD_STYLES:
+            self.field_style = "grid"
         self.paddle_colors = _fit_seats(self.paddle_colors, [0, 1, 2, 3], PADDLE_COLOR_COUNT)
         self.paddle_skins = _fit_seats(self.paddle_skins, [0, 0, 0, 0], PADDLE_SKIN_COUNT)
 
@@ -103,6 +116,9 @@ class Settings:
         values: dict[str, Any] = {}
         for name, default in known.items():
             value = data.get(name, default)
+            if name == "last_match":
+                values[name] = dict(value) if isinstance(value, dict) else {}
+                continue
             same_type = isinstance(value, type(default)) and (
                 isinstance(value, bool) == isinstance(default, bool)
             )

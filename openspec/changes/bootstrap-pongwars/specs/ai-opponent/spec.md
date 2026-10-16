@@ -22,11 +22,15 @@ AI strategies SHALL be registered in a `Registry`; adding a strategy MUST NOT re
 - **THEN** the match uses it
 
 ### Requirement: Obstacle and extra awareness
-The AI SHALL predict ball trajectory including bounces on walls and obstacles, and SHALL be able to pick up and use extras according to its difficulty.
+The AI SHALL predict ball trajectory including bounces on walls and obstacles, and SHALL be able to pick up and use extras according to its difficulty. It SHALL occasionally apply spin on an approaching paddle return, with frequency determined by its difficulty.
 
 #### Scenario: Bounce prediction
 - **WHEN** the ball will bounce on a wall before reaching the AI side
 - **THEN** the predicted intercept point accounts for that bounce
+
+#### Scenario: AI spin
+- **WHEN** the AI moves its paddle to return an approaching ball
+- **THEN** it sometimes applies spin, more often at higher difficulties
 
 ### Requirement: Deterministic AI
 Given the same seed and observations the AI SHALL produce the same inputs.

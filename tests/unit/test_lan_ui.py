@@ -14,9 +14,11 @@ from pongwars.core.settings import Settings
 from pongwars.domain.config import MatchConfig
 from pongwars.domain.world import Phase
 from pongwars.net.transport import MemoryNetwork, local_ip
+from pongwars.net.client import ClientState
 from pongwars.ui.core import AppContext
 from pongwars.ui.lan import (
     LanClientMatchScreen,
+    LanClientLobbyScreen,
     LanDropScreen,
     LanHelpScreen,
     LanHostMatchScreen,
@@ -90,11 +92,19 @@ def test_help_pages(ctx: AppContext) -> None:
 def test_menu_opens_lan_screens(ctx: AppContext) -> None:
     menu = MainMenuScreen(ctx)
     ctx.stack.push(menu)
-    menu.menu.index = 3
-    activate(menu.menu, 3)
+    menu.menu.index = 1
+    activate(menu.menu, 1)
+    lan_menu = ctx.stack.top
+    assert lan_menu is not menu
+    activate(lan_menu.menu, 1)
     assert isinstance(ctx.stack.top, LanJoinScreen)
     ctx.stack.top.back()
-    activate(menu.menu, 4)
+    assert ctx.stack.top is lan_menu
+    ctx.stack.pop()
+    menu.menu.index = 2
+    activate(menu.menu, 2)
+    help_menu = ctx.stack.top
+    activate(help_menu.menu, 1)
     assert isinstance(ctx.stack.top, LanHelpScreen)
 
 
@@ -134,20 +144,32 @@ def test_lobby_join_and_match_flow(ctx: AppContext) -> None:
     net, lobby, join = full_session(ctx)
     spin(net, join, lobby)
     assert [h.name for h in join.hosts]
+    assert join.hosts[0].room_name == "PLAYER"
     lobby.draw(surface())
     join.draw(surface())
+    assert not lobby.menu.items[2].enabled
+    lobby.start()
+    assert lobby.host is not None and lobby.host.world is None
     activate(join.menu, 0)  # connect to the discovered host
-    spin(net, join, lobby)
+    spin(net, join, lobby, n=2)
     assert lobby.host is not None and "BOB" in lobby.host.names()
+    client_lobby = ctx.stack.top
+    assert isinstance(client_lobby, LanClientLobbyScreen)
+    client_lobby._adjust_color(1)
+    client_lobby._adjust_skin(1)
+    spin(net, client_lobby, lobby)
+    assert lobby.host.colors[1] == client_lobby.client.colors[1]
+    assert lobby.host.skins[1] == client_lobby.client.skins[1]
     lobby.start()
     host_screen = ctx.stack.top
     assert isinstance(host_screen, LanHostMatchScreen)
     for _ in range(40):
         net.advance(1)
-        join.update(0.016)
+        client_lobby.update(0.016)
         host_screen.update(0.016)
-        if isinstance(ctx.stack.top, LanClientMatchScreen):
-            break
+        if client_lobby.client.state is not ClientState.PLAYING:
+            continue
+        break
     client_screen = ctx.stack.top
     assert isinstance(client_screen, LanClientMatchScreen)
     for _ in range(60):

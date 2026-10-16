@@ -26,6 +26,8 @@ class Paddle:
 
     rect: Rect
     axis: str = "y"
+    headbutt_offset: float = 0.0
+    headbutt_ticks: int = 0
 
     def __post_init__(self) -> None:
         """@brief Remember the unmodified half length."""
@@ -72,6 +74,8 @@ class Ball:
     hold_ticks: int = 0
     hold_offset: float = 0.0
     stored_vel: Vec2 = field(default_factory=Vec2)
+    rotation: float = 0.0
+    spin_rate: float = 0.0
 
 
 @dataclass
@@ -88,6 +92,26 @@ class Cat:
 
 
 @dataclass
+class Companion:
+    """@brief Temporary AI-controlled mini-paddle that protects its owner's goal."""
+
+    paddle: Paddle
+    owner: int
+    ttl: int
+
+
+@dataclass
+class Missile:
+    """@brief Projectile that stuns opponents and damages destructible obstacles."""
+
+    pos: Vec2
+    vel: Vec2
+    owner: int
+    ttl: int
+    radius: float
+
+
+@dataclass
 class Obstacle:
     """@brief Rectangular obstacle: solid, bumper or destructible; optionally patrolling."""
 
@@ -97,6 +121,7 @@ class Obstacle:
     patrol: Vec2 = field(default_factory=Vec2)
     period: int = 0
     active: bool = True
+    orbit: bool = False
 
     def __post_init__(self) -> None:
         """@brief Remember the home position used by the patrol path."""
@@ -109,5 +134,10 @@ class Obstacle:
         if self.period <= 0:
             return
         phase = math.sin(2.0 * math.pi * tick / self.period)
-        self.rect.cx = self.home.x + self.patrol.x * phase
-        self.rect.cy = self.home.y + self.patrol.y * phase
+        if self.orbit:
+            angle = 2.0 * math.pi * tick / self.period
+            self.rect.cx = self.home.x + self.patrol.x * math.cos(angle)
+            self.rect.cy = self.home.y + self.patrol.y * math.sin(angle)
+        else:
+            self.rect.cx = self.home.x + self.patrol.x * phase
+            self.rect.cy = self.home.y + self.patrol.y * phase

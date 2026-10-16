@@ -1,0 +1,15 @@
+id = "orbital"
+theme = "orbit"
+players = 2
+mirror = "x"
+
+[[obstacles]]
+kind = "bumper"
+x = 55
+y = 45
+half_w = 3
+half_h = 3
+patrol_x = 10
+patrol_y = 10
+period = 360
+orbit = true

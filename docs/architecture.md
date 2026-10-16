@@ -50,7 +50,9 @@ ender/camera.py) drawing onto a 320x180 surface scaled up; input lives in input/
 
 ## Extras
 
-Powers, weapons, penalties and statuses are Effect subclasses registered in domain.extras.effects.EFFECTS and balanced in data/extras/extras.toml. ExtrasManager (owned by World) spawns pickups, applies effects and exposes per-player Mods that World.step reads. Fire keys per seat: D, LEFT, K, KP5. AI seats fire too: `AIController.fire_intent()` (heuristics in `ai/extras.py`, paced by the difficulty profile) is merged into the inputs by `collect_inputs` and the LAN host. HUD codes come from the `extras.NAME.short` locale keys.
+Powers, weapons, penalties and statuses are Effect subclasses registered in domain.extras.effects.EFFECTS and balanced in data/extras/extras.toml. ExtrasManager (owned by World) spawns pickups, applies effects and exposes per-player Mods that World.step reads. Fire keys per seat: D, LEFT, K, KP5; spin keys are A, RIGHT, H, KP4. Spin is part of `FrameInputs`, curves the ball's velocity continuously after impact, and emits a distinct `SpinHit` audio event. Score-gap assistance is limited to one targeted pickup every 15 seconds; the table holds at most two pickups, which maintain a minimum separation. The companion paddle and missiles are authoritative world entities and are included in LAN snapshots. AI seats fire extras through `AIController.fire_intent()` and occasionally apply spin during an approaching return, with both decisions paced by the difficulty profile. Active effect and weapon names are translated using full `extras.NAME.name` locale entries and displayed on separate HUD lines.
+
+Each new match has a deterministic three-step countdown of 30 ticks per digit (half a second at 60 ticks per second) before its first serve.
 
 ## UI, audio and settings
 

@@ -92,6 +92,19 @@ def test_game_modes_king_scores_from_zone_not_goals() -> None:
     assert world.winner == 1
 
 
+def test_game_modes_king_awards_point_during_normal_zone_crossing() -> None:
+    world = _world("king", points_to_win=10)
+    world.phase = Phase.PLAYING
+    world.last_toucher = 0
+    world.ball.pos = Vec2(c.FIELD_WIDTH / 2 - c.KING_ZONE_HALF_WIDTH - 2, c.FIELD_HEIGHT / 2)
+    world.ball.vel = Vec2(c.BALL_START_SPEED, 0)
+
+    for _ in range(c.KING_POINT_INTERVAL_TICKS + 2):
+        world.step(FrameInputs())
+
+    assert world.scores == [1, 0]
+
+
 def test_game_modes_custom_mode_registration() -> None:
     @register_mode("first_goal")
     class FirstGoal(Mode):

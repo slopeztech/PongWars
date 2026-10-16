@@ -156,6 +156,8 @@ class Jukebox:
         self._rng = random.Random()  # noqa: S311 - not security related
         self._context = ""
         self._ids: list[str] = []
+        self._last_played = ""
+        self._last_by_context: dict[str, str] = {}
         self._next = ""
         self._gap = 0.0
         self.current = ""
@@ -166,24 +168,40 @@ class Jukebox:
         """@brief Context being played, or an empty string when stopped."""
         return self._context
 
-    def start(self, context: str, first: str | None = None, seed: int = 0) -> None:
+    def start(
+        self,
+        context: str,
+        first: str | None = None,
+        seed: int | None = None,
+        avoid_previous: str = "",
+    ) -> str:
         """@brief Start playing a context unless it is already playing.
         @param context `menu` or `match`.
         @param first Song to play first (it must be allowed in the context).
-        @param seed Seed of the random order.
+        @param seed Optional deterministic seed for the random order.
+        @param avoid_previous Song id to exclude from the random first pick.
+        @return The selected first song id, or an empty string when unavailable.
         """
         ids = self.library.ids_for(context)
         if not ids:
             self.stop()
-            return
+            return ""
         if self._context == context and (first is None or first == self.current):
-            return
+            return self.current or self._waiting
         self.sink.stop()
-        self._rng = random.Random(seed)  # noqa: S311 - not security related
+        if seed is not None:
+            self._rng = random.Random(seed)  # noqa: S311 - not security related
         self._context, self._ids = context, ids
         self.current = self._waiting = ""
         self._gap = 0.0
-        self._begin(first if first in ids else self._pick(""))
+        previous = self._last_by_context.get(context, "")
+        excluded = {previous, self._last_played, avoid_previous}
+        if first in ids and first not in excluded:
+            selected = first
+        else:
+            selected = self._pick(previous, avoid_previous, self._last_played)
+        self._begin(selected)
+        return selected
 
     def stop(self) -> None:
         """@brief Stop playing and forget the context."""
@@ -222,9 +240,12 @@ class Jukebox:
             if self._gap <= 0:
                 self._begin(self._next)
 
-    def _pick(self, previous: str) -> str:
-        """@brief Random song of the context that differs from the previous one."""
-        choices = [sid for sid in self._ids if sid != previous] or self._ids
+    def _pick(
+        self, previous: str = "", avoid_previous: str = "", last_played: str = ""
+    ) -> str:
+        """@brief Random song excluding recent context, global and caller-specified tracks."""
+        excluded = {previous, avoid_previous, last_played}
+        choices = [sid for sid in self._ids if sid not in excluded] or self._ids
         return self._rng.choice(choices)
 
     def _begin(self, song_id: str) -> None:
@@ -237,6 +258,8 @@ class Jukebox:
 
     def _play(self, song_id: str) -> None:
         self.current, self._waiting = song_id, ""
+        self._last_played = song_id
+        self._last_by_context[self._context] = song_id
         self.sink.start(self._cache[song_id])
         self._evict()
 

@@ -1,6 +1,7 @@
 """AI tests (spec: ai-opponent)."""
 
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 
@@ -11,6 +12,7 @@ from pongwars.domain.config import MatchConfig
 from pongwars.domain.entities import Obstacle, Rect
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import FrameInputs, Phase, World
+from pongwars.input.controllers import collect_inputs
 
 MATCHES = 30
 POINTS_TO_WIN = 3
@@ -139,6 +141,22 @@ def test_ai_plays_a_top_seat() -> None:
     for _ in range(600):
         world.step(FrameInputs(tuple(b.poll() for b in bots)))
     assert all(abs(m) <= 1.0 for m in (b.poll() for b in bots))
+
+
+def test_ai_occasionally_spins_on_an_approaching_return() -> None:
+    world = _world()
+    paddle = world.paddles[0].rect
+    observation = replace(
+        Observation.from_world(world, 0),
+        ball_pos=Vec2(paddle.cx + 30.0, paddle.cy + 24.0),
+        ball_vel=Vec2(-80.0, 0.0),
+    )
+    spin_inputs = []
+    for seed in range(64):
+        ai = AIController(lambda: observation, "insane", seed=seed)
+        spin_inputs.append(collect_inputs([ai]).spin[0])
+    assert any(spin_inputs)
+    assert not all(spin_inputs)
 
 
 def _fires_within(world: World, ai: AIController, ticks: int) -> bool:

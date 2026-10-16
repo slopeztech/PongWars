@@ -66,10 +66,15 @@ class App:
             else:
                 stack.handle_event(event)
         self.ctx.audio.update(dt)
+        song_id = self.ctx.audio.current_song_id()
+        song_key = (self.ctx.audio.music_context, song_id) if song_id is not None else None
+        self.ctx.music_notice.update(song_key, self.ctx.audio.now_playing(), dt)
         stack.update(dt)
         if stack.top is None:
             return False
         stack.draw(self.surface)
+        if stack.top is not None and stack.top.show_music_notice:
+            self.ctx.music_notice.draw(self.surface)
         pygame.transform.scale(self.surface, self.window.get_size(), self.window)
         pygame.display.flip()
         return True
