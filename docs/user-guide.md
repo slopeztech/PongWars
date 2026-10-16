@@ -105,9 +105,16 @@ penalties); use Left/Right to turn pages.
 
 ## Settings
 
-Master / music / effects volume,
-fullscreen, window scale, language (English, Spanish), particles, ball trail, screen shake
-and the camera for 3-4 player arenas (**shared** view or **split** screen). Settings are saved automatically to
+Settings are grouped into four submenus:
+
+- **Graphics**: fullscreen, monitor, and window scale. Select the monitor before
+  enabling fullscreen to move the game to that screen.
+- **Sound**: master, music, and effects volume.
+- **Gameplay**: language, particles, ball trail, screen shake, and the camera for
+  3-4 player arenas (**shared** view or **split** screen).
+- **Controls**: rebind the movement keys for each player.
+
+Changes are applied and saved automatically to
 `%APPDATA%\PongWars\settings.json` (Linux: `~/.config/PongWars/`).
 
 ## Troubleshooting

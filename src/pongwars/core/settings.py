@@ -64,6 +64,7 @@ class Settings:
     sfx_volume: int = 100
     fullscreen: bool = False
     scale: int = 4
+    display_index: int = 0
     language: str = "en"
     particles: bool = True
     trail: bool = True
@@ -86,6 +87,7 @@ class Settings:
         for name in ("master_volume", "music_volume", "sfx_volume"):
             setattr(self, name, max(MIN_VOLUME, min(MAX_VOLUME, int(getattr(self, name)))))
         self.scale = max(MIN_SCALE, min(MAX_SCALE, int(self.scale)))
+        self.display_index = max(0, int(self.display_index))
         if self.view not in VIEW_MODES:
             self.view = "shared"
         if self.background not in BACKGROUNDS:

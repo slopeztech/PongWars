@@ -831,6 +831,7 @@ class Renderer:
     ) -> None:
         line_height = GLYPH_H * SMALL_TEXT + 1
         width = self._canvas.get_width()
+        occupied: list[pygame.Rect] = []
         for seat, (x, y) in positions.items():
             labels = [
                 f"{self.translator.translate(f'extras.{effect.name}.name')} "
@@ -852,6 +853,11 @@ class Renderer:
                 row_y = y + row * line_height
                 if own_seat is None and world.players > SPLIT_COLUMNS and seat >= SPLIT_COLUMNS:
                     row_y += 2 * line_height
+                label_rect = pygame.Rect(label_x, row_y, label_width, line_height)
+                while any(label_rect.colliderect(placed) for placed in occupied):
+                    row_y += line_height
+                    label_rect.y = row_y
+                occupied.append(label_rect)
                 draw_text(
                     self._canvas,
                     label,

@@ -40,19 +40,41 @@ class App:
 
     def _open_window(self) -> pygame.Surface:
         size = (LOW_W * self.settings.scale, LOW_H * self.settings.scale)
-        flags = pygame.FULLSCREEN | pygame.SCALED if self.settings.fullscreen else 0
-        return pygame.display.set_mode(size, flags)
+        display_count = max(1, pygame.display.get_num_displays())
+        display_index = min(self.settings.display_index, display_count - 1)
+        self.settings.display_index = display_index
+        self._active_display = display_index
+        if self.settings.fullscreen:
+            return pygame.display.set_mode((0, 0), pygame.FULLSCREEN, display=display_index)
+        return pygame.display.set_mode(size, display=display_index)
 
     def apply_display(self) -> None:
-        """@brief Re-open the window when size or fullscreen changed."""
+        """@brief Apply window size, fullscreen and monitor changes immediately."""
         if not hasattr(self, "window"):
             return
         wanted = (LOW_W * self.settings.scale, LOW_H * self.settings.scale)
         fullscreen = bool(self.window.get_flags() & pygame.FULLSCREEN)
-        if fullscreen != self.settings.fullscreen or (
-            not fullscreen and self.window.get_size() != wanted
-        ):
+        display_changed = self._active_display != self.settings.display_index
+        size_changed = not fullscreen and self.window.get_size() != wanted
+        if not display_changed and fullscreen == self.settings.fullscreen and not size_changed:
+            return
+
+        display_count = max(1, pygame.display.get_num_displays())
+        display_index = min(self.settings.display_index, display_count - 1)
+        self.settings.display_index = display_index
+        if display_changed:
+            self.window = pygame.display.set_mode(wanted, display=display_index)
+            centered_on_display = pygame.WINDOWPOS_CENTERED | display_index
+            pygame.display.set_window_position((centered_on_display, centered_on_display))
+            if self.settings.fullscreen:
+                self.window = pygame.display.set_mode(
+                    (0, 0), pygame.FULLSCREEN, display=display_index
+                )
+        elif fullscreen != self.settings.fullscreen:
             self.window = self._open_window()
+        elif size_changed:
+            self.window = pygame.display.set_mode(wanted, display=display_index)
+        self._active_display = display_index
 
     def tick(self, dt: float) -> bool:
         """@brief Process one frame.

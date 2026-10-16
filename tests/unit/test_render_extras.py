@@ -141,6 +141,43 @@ def test_shared_hud_draws_each_players_extras_under_their_score(
     assert anchors[0][0] != anchors[1][0]
 
 
+@pytest.mark.parametrize(
+    ("arena", "players"),
+    [("classic", 2), ("trident", 3), ("crossfire", 4)],
+)
+def test_shared_hud_never_overlaps_player_extras(
+    arena: str,
+    players: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pygame.init()
+    world = World(MatchConfig(arena=arena, controllers=("human",) * players))
+    renderer = Renderer()
+    renderer._canvas = pygame.Surface((320, 180))
+    for seat in range(players):
+        world.extras.apply("inverted", seat, [])
+
+    rendered: list[tuple[str, int, int]] = []
+
+    def capture(
+        _surface: pygame.Surface, text: str, x: int, y: int, _color: tuple[int, ...], _scale: int
+    ) -> None:
+        rendered.append((text, x, y))
+
+    monkeypatch.setattr(renderer_module, "draw_text", capture)
+    anchors = renderer._draw_shared_scores(world, 320)
+    renderer._draw_effects(world, anchors, None)
+
+    effects = [
+        (text, pygame.Rect(x, y, text_width(text), 6))
+        for text, x, y in rendered
+        if text.startswith("Inverted controls")
+    ]
+    assert len(effects) == players
+    for index, (_, rect) in enumerate(effects):
+        assert all(not rect.colliderect(other) for _, other in effects[index + 1 :])
+
+
 def test_split_hud_keeps_extras_under_the_affected_players_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -164,8 +201,18 @@ def test_split_hud_keeps_extras_under_the_affected_players_score(
     anchors = renderer._draw_split_scores(world, 0, view.rect.width)
     renderer._draw_effects(world, anchors, view.seat)
 
-    assert next(item[1:] for item in positions if item[0].startswith("Shield")) == anchors[0]
-    assert next(item[1:] for item in positions if item[0].startswith("Slow paddle")) == anchors[1]
+    shield_text, shield_x, shield_y = next(
+        item for item in positions if item[0].startswith("Shield")
+    )
+    slow_text, slow_x, slow_y = next(
+        item for item in positions if item[0].startswith("Slow paddle")
+    )
+    assert (shield_x, shield_y) == anchors[0]
+    assert slow_x == anchors[1][0]
+    assert slow_y >= anchors[1][1]
+    assert not pygame.Rect(shield_x, shield_y, text_width(shield_text), 6).colliderect(
+        pygame.Rect(slow_x, slow_y, text_width(slow_text), 6)
+    )
 
 
 def test_spanish_hud_draws_complete_effect_and_weapon_names(

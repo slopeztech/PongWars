@@ -27,6 +27,7 @@ from pongwars.render import palette as pal
 from pongwars.render.backgrounds import draw_background
 from pongwars.render.font import draw_text, text_width, unsupported_chars
 from pongwars.render.renderer import Renderer, RenderSettings
+from pongwars.ui import screens as screens_module
 from pongwars.ui.core import AppContext
 from pongwars.ui.screens import (
     AppearanceScreen,
@@ -109,9 +110,7 @@ def test_appearance_screen_changes_and_persists(ctx: AppContext) -> None:
     screen.draw(surface)
     screen.handle_event(key(pygame.K_RIGHT))
     assert ctx.settings.paddle_colors[0] == 1
-    for _ in range(4):
-        screen.handle_event(key(pygame.K_DOWN))
-    screen.handle_event(key(pygame.K_RIGHT))
+    screen.handle_event(key(pygame.K_RETURN))
     assert ctx.settings.paddle_skins[0] == 1
     for _ in range(4):
         screen.handle_event(key(pygame.K_DOWN))
@@ -134,6 +133,45 @@ def test_appearance_screen_changes_and_persists(ctx: AppContext) -> None:
     settings = SettingsScreen(ctx)
     assert all(item.label() != "Canción de partida" for item in settings.menu.items)
     screen.draw(surface)
+    assert len(screen.menu.items) == 8
+    assert screen.menu.items[0].label() == "Player 1"
+    assert screen.menu.items[0].value() == "Red Striped"
+
+
+def test_appearance_menu_uses_standard_margin_and_balanced_previews(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    screen = AppearanceScreen(ctx)
+    menu_layout: list[tuple[int, int, int]] = []
+    monkeypatch.setattr(
+        screen.menu,
+        "draw",
+        lambda _surface, x, y, width, **_kwargs: menu_layout.append((x, y, width)),
+    )
+    surface = pygame.Surface((320, 180))
+
+    screen.draw(surface)
+
+    assert menu_layout == [(40, 40, screens_module.APPEARANCE_MENU_W)]
+    player_frame = pygame.Rect(*screens_module.PLAYER_PREVIEW_BOX)
+    style_frame = pygame.Rect(*screens_module.STYLE_PREVIEW_BOX)
+    assert surface.get_at(player_frame.topleft)[:3] == pal.UI_MUTED
+    assert surface.get_at(style_frame.topleft)[:3] == pal.UI_MUTED
+    assert player_frame.bottom < style_frame.top
+    assert style_frame.right == 312
+
+
+def test_appearance_style_preview_renders_every_field_style(ctx: AppContext) -> None:
+    screen = AppearanceScreen(ctx)
+    surface = pygame.Surface((320, 180))
+    frames: set[bytes] = set()
+
+    for field_style in FIELD_STYLES:
+        ctx.settings.field_style = field_style
+        screen.draw(surface)
+        frames.add(pygame.image.tobytes(surface, "RGB"))
+
+    assert len(frames) == len(FIELD_STYLES)
 
 
 def test_match_renderer_uses_saved_ball_trail_and_field_styles(ctx: AppContext) -> None:

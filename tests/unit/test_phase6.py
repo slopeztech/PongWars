@@ -29,6 +29,7 @@ from pongwars.ui.screens import (
     MatchScreen,
     PauseScreen,
     ResultsScreen,
+    SettingsCategoryScreen,
     SettingsScreen,
     SetupScreen,
     TitleScreen,
@@ -210,6 +211,18 @@ def test_app_runs_frames_and_quits() -> None:
         pygame.quit()
 
 
+def test_fullscreen_uses_native_display_without_letterboxing() -> None:
+    from pongwars.app import App
+
+    app = App(Settings(fullscreen=True))
+    try:
+        assert app.window.get_flags() & pygame.FULLSCREEN
+        assert not app.window.get_flags() & pygame.SCALED
+        app.tick(0.016)
+    finally:
+        pygame.quit()
+
+
 def test_fourth_default_binding_exists() -> None:
     assert make_keymap({}).get(3).negative == pygame.K_KP8
 
@@ -372,17 +385,23 @@ def test_pause_opens_settings(ctx: AppContext) -> None:
 
 
 def test_settings_changes_apply_and_persist(ctx: AppContext) -> None:
-    screen = SettingsScreen(ctx)
+    screen = SettingsCategoryScreen(ctx, "audio")
     screen.handle_event(key(pygame.K_LEFT))
     assert ctx.settings.master_volume == 70
-    screen.menu.index = 5
+    screen = SettingsCategoryScreen(ctx, "gameplay")
+    screen.menu.index = 0
     screen.handle_event(key(pygame.K_RIGHT))
     assert ctx.settings.language == "es"
     assert ctx.translator.language == "es"
     screen.handle_event(key(pygame.K_LEFT))
-    for index in (3, 4, 6, 7, 8, 9):
+    for index in (1, 2, 3, 4):
         screen.menu.index = index
         screen.handle_event(key(pygame.K_RIGHT))
+    graphics = SettingsCategoryScreen(ctx, "graphics")
+    graphics.menu.index = 0
+    graphics.handle_event(key(pygame.K_RIGHT))
+    graphics.menu.index = 2
+    graphics.handle_event(key(pygame.K_RIGHT))
     assert ctx.settings.fullscreen
     assert ctx.settings.scale == 5
     assert ctx.settings.view == "split"
@@ -392,8 +411,8 @@ def test_settings_changes_apply_and_persist(ctx: AppContext) -> None:
 
 
 def test_key_rebinding_capture(ctx: AppContext) -> None:
-    screen = SettingsScreen(ctx)
-    screen.menu.index = 10
+    screen = SettingsCategoryScreen(ctx, "controls")
+    screen.menu.index = 0
     screen.handle_event(key(pygame.K_RETURN))
     assert screen.capturing == 0
     surface = pygame.Surface((LOW_W, LOW_H))
@@ -411,3 +430,66 @@ def test_key_rebinding_capture(ctx: AppContext) -> None:
     screen.handle_event(key(pygame.K_z))
     assert screen.error == "input.error.key_in_use"
     screen.draw(surface)
+
+
+def test_settings_menu_opens_independent_submenus(ctx: AppContext) -> None:
+    screen = SettingsScreen(ctx)
+    assert [item.label() for item in screen.menu.items] == [
+        "Graphics",
+        "Sound",
+        "Gameplay",
+        "Controls",
+    ]
+    screen.menu.index = 0
+    screen.handle_event(key(pygame.K_RETURN))
+    assert isinstance(ctx.stack.top, SettingsCategoryScreen)
+    assert ctx.stack.top.category == "graphics"
+
+
+def test_settings_submenu_uses_standard_menu_margins(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    screen = SettingsCategoryScreen(ctx, "gameplay")
+    positions: list[tuple[int, int, int]] = []
+    monkeypatch.setattr(
+        screen.menu,
+        "draw",
+        lambda _surface, x, y, width, **_kwargs: positions.append((x, y, width)),
+    )
+
+    screen.draw(pygame.Surface((LOW_W, LOW_H)))
+
+    assert positions == [(40, 40, 240)]
+
+
+def test_graphics_settings_can_select_another_monitor(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pygame.display, "get_num_displays", lambda: 2)
+    monkeypatch.setattr(pygame.display, "get_desktop_sizes", lambda: [(1920, 1080), (2560, 1440)])
+    requested: list[tuple[tuple[int, int], int, int]] = []
+    positions: list[tuple[int, int]] = []
+
+    def fake_set_mode(
+        size: tuple[int, int], flags: int = 0, depth: int = 0, display: int = 0, vsync: int = 0
+    ) -> pygame.Surface:
+        requested.append((size, flags, display))
+        return pygame.Surface(size if all(size) else (1920, 1080))
+
+    monkeypatch.setattr(pygame.display, "set_mode", fake_set_mode)
+    monkeypatch.setattr(pygame.display, "set_window_position", positions.append)
+    from pongwars.app import App
+
+    app = App(ctx.settings)
+    assert requested[-1][2] == 0
+    graphics = SettingsCategoryScreen(app.ctx, "graphics")
+    graphics.menu.index = 1
+    graphics.handle_event(key(pygame.K_RIGHT))
+    assert app.settings.display_index == 1
+    assert requested[-1][2] == 1
+    centered_on_second_display = pygame.WINDOWPOS_CENTERED | 1
+    assert positions[-1] == (centered_on_second_display, centered_on_second_display)
+    assert "2: 2560x1440" in graphics.menu.items[1].value()
+    app.settings.fullscreen = True
+    app.apply_display()
+    assert requested[-1] == ((0, 0), pygame.FULLSCREEN, 1)

@@ -96,8 +96,9 @@ configure open seats; unfilled seats are controlled by AI. See the
 ## Appearance and sound
 
 Choose paddle colors and styles, ball designs, ball trails, and arena-field styles.
-Select an animated background or turn it off. Adjust music, sound effects, fullscreen,
-window size, language, particles, and screen shake in **Settings**. Preferences are
+Select an animated background or turn it off. **Settings** is split into Graphics,
+Sound, Gameplay, and Controls. Graphics lets you choose fullscreen, window size, and
+which monitor to use; the selected monitor is also used in fullscreen. Preferences are
 saved automatically. The original soundtrack plays in menus and matches.
 
 ### Controls

@@ -53,6 +53,9 @@ LAN_CONTROLLER_CHOICES = ("remote", "ai")
 MAX_SEED = 2**31 - 1
 BLINK_PERIOD = 1.0
 PREVIEW_BOX = (190, 100, 120, 68)
+APPEARANCE_MENU_W = 205
+PLAYER_PREVIEW_BOX = (258, 40, 54, 46)
+STYLE_PREVIEW_BOX = (258, 94, 54, 46)
 VOLUME_STEP = 10
 MAX_VOLUME = 100
 MIN_SCALE = 2
@@ -823,15 +826,53 @@ class ResultsScreen(MenuScreen):
 
 
 class SettingsScreen(MenuScreen):
-    """@brief Audio, display, effects, language and key bindings (persisted on every change)."""
+    """@brief Entry point for the settings submenus."""
 
     title_key = "settings.title"
 
     def __init__(self, ctx: AppContext) -> None:
-        """@brief Build the menu.
-        @param ctx Application context.
+        """@brief Build links to each settings category.
+        @param ctx Shared application context.
         """
         super().__init__(ctx)
+        self.menu.set_items(
+            [
+                MenuItem(
+                    lambda: ctx.t("settings.graphics"),
+                    on_activate=lambda: self._open_category("graphics"),
+                ),
+                MenuItem(
+                    lambda: ctx.t("settings.audio"),
+                    on_activate=lambda: self._open_category("audio"),
+                ),
+                MenuItem(
+                    lambda: ctx.t("settings.gameplay"),
+                    on_activate=lambda: self._open_category("gameplay"),
+                ),
+                MenuItem(
+                    lambda: ctx.t("settings.controls"),
+                    on_activate=lambda: self._open_category("controls"),
+                ),
+            ]
+        )
+
+    def _open_category(self, category: str) -> None:
+        self.ctx.stack.push(SettingsCategoryScreen(self.ctx, category))
+
+
+class SettingsCategoryScreen(MenuScreen):
+    """@brief Configure one settings category; each change is applied and saved."""
+
+    def __init__(self, ctx: AppContext, category: str) -> None:
+        """@brief Build one category of settings.
+        @param ctx Shared application context.
+        @param category Category key: graphics, audio, gameplay or controls.
+        """
+        super().__init__(ctx)
+        if category not in ("graphics", "audio", "gameplay", "controls"):
+            raise ValueError(f"Unknown settings category: {category}")
+        self.category = category
+        self.title_key = f"settings.{category}.title"
         self.capturing: int | None = None
         self.captured: list[int] = []
         self.error = ""
@@ -850,6 +891,25 @@ class SettingsScreen(MenuScreen):
         s = self.ctx.settings
         s.scale = min(MAX_SCALE, max(MIN_SCALE, s.scale + step))
         self.commit()
+
+    def _display(self, step: int) -> None:
+        s = self.ctx.settings
+        count = max(1, pygame.display.get_num_displays())
+        s.display_index = (s.display_index + step) % count
+        self.commit()
+
+    def _display_text(self) -> str:
+        s = self.ctx.settings
+        sizes = pygame.display.get_desktop_sizes()
+        count = max(1, pygame.display.get_num_displays())
+        index = min(s.display_index, count - 1)
+        width, height = sizes[index] if index < len(sizes) else (0, 0)
+        return self.ctx.t(
+            "settings.display.value",
+            number=index + 1,
+            width=width,
+            height=height,
+        )
 
     def _language(self, step: int) -> None:
         s = self.ctx.settings
@@ -870,64 +930,81 @@ class SettingsScreen(MenuScreen):
         return self.ctx.t("option.on" if getattr(self.ctx.settings, attr) else "option.off")
 
     def rebuild(self) -> None:
-        """@brief Create the rows."""
+        """@brief Create the rows belonging to this category."""
         t, s = self.ctx.t, self.ctx.settings
-        items = [
-            MenuItem(
-                lambda: t("settings.master"),
-                lambda: str(s.master_volume),
-                on_adjust=lambda d: self._volume("master_volume", d),
-            ),
-            MenuItem(
-                lambda: t("settings.music"),
-                lambda: str(s.music_volume),
-                on_adjust=lambda d: self._volume("music_volume", d),
-            ),
-            MenuItem(
-                lambda: t("settings.sfx"),
-                lambda: str(s.sfx_volume),
-                on_adjust=lambda d: self._volume("sfx_volume", d),
-            ),
-            MenuItem(
-                lambda: t("settings.fullscreen"),
-                lambda: self._onoff("fullscreen"),
-                on_adjust=lambda d: self._toggle("fullscreen"),
-            ),
-            MenuItem(lambda: t("settings.scale"), lambda: f"x{s.scale}", on_adjust=self._scale),
-            MenuItem(
-                lambda: t("settings.language"),
-                lambda: load_catalog(s.language).get("language.name", s.language),
-                on_adjust=self._language,
-            ),
-            MenuItem(
-                lambda: t("settings.particles"),
-                lambda: self._onoff("particles"),
-                on_adjust=lambda d: self._toggle("particles"),
-            ),
-            MenuItem(
-                lambda: t("settings.trail"),
-                lambda: self._onoff("trail"),
-                on_adjust=lambda d: self._toggle("trail"),
-            ),
-            MenuItem(
-                lambda: t("settings.shake"),
-                lambda: self._onoff("shake"),
-                on_adjust=lambda d: self._toggle("shake"),
-            ),
-            MenuItem(
-                lambda: t("settings.view"),
-                lambda: t(f"view.{s.view}"),
-                on_adjust=self._view,
-            ),
-        ]
-        for seat in range(MAX_PLAYERS):
-            items.append(
+        if self.category == "audio":
+            items = [
+                MenuItem(
+                    lambda: t("settings.master"),
+                    lambda: str(s.master_volume),
+                    on_adjust=lambda d: self._volume("master_volume", d),
+                ),
+                MenuItem(
+                    lambda: t("settings.music"),
+                    lambda: str(s.music_volume),
+                    on_adjust=lambda d: self._volume("music_volume", d),
+                ),
+                MenuItem(
+                    lambda: t("settings.sfx"),
+                    lambda: str(s.sfx_volume),
+                    on_adjust=lambda d: self._volume("sfx_volume", d),
+                ),
+            ]
+        elif self.category == "graphics":
+            items = [
+                MenuItem(
+                    lambda: t("settings.fullscreen"),
+                    lambda: self._onoff("fullscreen"),
+                    on_adjust=lambda _d: self._toggle("fullscreen"),
+                ),
+                MenuItem(
+                    lambda: t("settings.display"),
+                    self._display_text,
+                    on_adjust=self._display,
+                ),
+                MenuItem(
+                    lambda: t("settings.scale"),
+                    lambda: f"x{s.scale}",
+                    on_adjust=self._scale,
+                ),
+            ]
+        elif self.category == "gameplay":
+            items = [
+                MenuItem(
+                    lambda: t("settings.language"),
+                    lambda: load_catalog(s.language).get("language.name", s.language),
+                    on_adjust=self._language,
+                ),
+                MenuItem(
+                    lambda: t("settings.particles"),
+                    lambda: self._onoff("particles"),
+                    on_adjust=lambda _d: self._toggle("particles"),
+                ),
+                MenuItem(
+                    lambda: t("settings.trail"),
+                    lambda: self._onoff("trail"),
+                    on_adjust=lambda _d: self._toggle("trail"),
+                ),
+                MenuItem(
+                    lambda: t("settings.shake"),
+                    lambda: self._onoff("shake"),
+                    on_adjust=lambda _d: self._toggle("shake"),
+                ),
+                MenuItem(
+                    lambda: t("settings.view"),
+                    lambda: t(f"view.{s.view}"),
+                    on_adjust=self._view,
+                ),
+            ]
+        else:
+            items = [
                 MenuItem(
                     lambda seat=seat: t("settings.keys", number=seat + 1),  # type: ignore[misc]
                     lambda seat=seat: self._key_names(seat),  # type: ignore[misc]
                     on_activate=lambda seat=seat: self.begin_capture(seat),  # type: ignore[misc]
                 )
-            )
+                for seat in range(MAX_PLAYERS)
+            ]
         self.menu.set_items(items)
 
     def _key_names(self, seat: int) -> str:
@@ -970,11 +1047,9 @@ class SettingsScreen(MenuScreen):
             self.ctx.settings.save()
 
     def draw(self, surface: pygame.Surface) -> None:
-        """@brief Draw the menu and capture/error hints.
-        @param surface Low-resolution target.
-        """
+        """@brief Draw the menu and capture/error hints."""
         _title(self.ctx, surface, self.title_key)
-        self.menu.draw(surface, 24, 28, 272)
+        self.menu.draw(surface, MENU_X, MENU_Y, MENU_W)
         if self.capturing is not None:
             _centered(surface, self.ctx.t("settings.press_keys"), HINT_Y - 10, pal.YELLOW)
         elif self.error:
@@ -997,20 +1072,14 @@ class AppearanceScreen(MenuScreen):
         for seat in range(SEATS):
             items.append(
                 MenuItem(
-                    lambda seat=seat: t("appearance.color", number=seat + 1),  # type: ignore[misc]
-                    lambda seat=seat: t(f"color.{s.paddle_colors[seat]}"),  # type: ignore[misc]
+                    lambda seat=seat: t("appearance.player", number=seat + 1),  # type: ignore[misc]
+                    lambda seat=seat: f"{t(f'color.{s.paddle_colors[seat]}')} "
+                    f"{t(f'skin.{s.paddle_skins[seat]}')}",
+                    on_activate=lambda seat=seat: self._step_seat(  # type: ignore[misc]
+                        s.paddle_skins, seat, 1, PADDLE_SKIN_COUNT
+                    ),
                     on_adjust=lambda d, seat=seat: self._step_seat(  # type: ignore[misc]
                         s.paddle_colors, seat, d, PADDLE_COLOR_COUNT
-                    ),
-                )
-            )
-        for seat in range(SEATS):
-            items.append(
-                MenuItem(
-                    lambda seat=seat: t("appearance.skin", number=seat + 1),  # type: ignore[misc]
-                    lambda seat=seat: t(f"skin.{s.paddle_skins[seat]}"),  # type: ignore[misc]
-                    on_adjust=lambda d, seat=seat: self._step_seat(  # type: ignore[misc]
-                        s.paddle_skins, seat, d, PADDLE_SKIN_COUNT
                     ),
                 )
             )
@@ -1067,47 +1136,75 @@ class AppearanceScreen(MenuScreen):
         s.save()
 
     def draw(self, surface: pygame.Surface) -> None:
-        """@brief Draw the rows and a live paddle preview.
+        """@brief Draw the rows and live player, ball and field previews.
         @param surface Low-resolution target.
         """
         _title(self.ctx, surface, self.title_key)
-        self.menu.draw(surface, 24, 26, 220)
+        self.menu.draw(surface, MENU_X, MENU_Y, APPEARANCE_MENU_W)
+        self._draw_player_preview(surface)
+        self._draw_style_preview(surface)
+        _centered(surface, self.ctx.t("appearance.hint"), HINT_Y, pal.LIGHT_GREY)
+
+    def _draw_player_preview(self, surface: pygame.Surface) -> None:
         s = self.ctx.settings
+        rect = pygame.Rect(*PLAYER_PREVIEW_BOX)
+        pygame.draw.rect(surface, pal.NAVY, rect)
+        pygame.draw.rect(surface, pal.UI_MUTED, rect, 1)
         for seat in range(SEATS):
             colour = pal.PADDLE_PALETTE[s.paddle_colors[seat] % len(pal.PADDLE_PALETTE)]
-            x = 262 + seat * 12
-            pygame.draw.rect(surface, colour, (x, 40, 6, 36))
+            x = rect.x + 4 + seat * 12
+            pygame.draw.rect(surface, pal.UI_BACKGROUND, (x - 1, rect.y + 5, 8, 25))
+            pygame.draw.rect(surface, colour, (x, rect.y + 6, 6, 23))
             if s.paddle_skins[seat] == 1:
-                for y in range(42, 76, 6):
+                for y in range(rect.y + 8, rect.y + 28, 5):
                     pygame.draw.rect(surface, pal.WHITE, (x, y, 6, 2))
             elif s.paddle_skins[seat] == 2:
-                pygame.draw.rect(surface, pal.WHITE, (x + 2, 40, 2, 36))
+                pygame.draw.rect(surface, pal.WHITE, (x + 2, rect.y + 6, 2, 23))
             elif s.paddle_skins[seat] == 3:
-                pygame.draw.rect(surface, pal.WHITE, (x, 40, 6, 4))
-                pygame.draw.rect(surface, pal.WHITE, (x, 72, 6, 4))
-        self._draw_style_preview(surface)
-        _hint(self.ctx, surface)
+                pygame.draw.rect(surface, pal.WHITE, (x, rect.y + 6, 6, 3))
+                pygame.draw.rect(surface, pal.WHITE, (x, rect.y + 26, 6, 3))
+            label = str(seat + 1)
+            draw_text(surface, label, x + (6 - text_width(label)) // 2, rect.y + 36, pal.WHITE)
 
     def _draw_style_preview(self, surface: pygame.Surface) -> None:
         s = self.ctx.settings
-        rect = pygame.Rect(258, 96, 54, 38)
+        rect = pygame.Rect(*STYLE_PREVIEW_BOX)
         pygame.draw.rect(surface, pal.NAVY, rect)
+        court = rect.inflate(-4, -4)
         if s.field_style == "checker":
-            for row in range(3):
-                for column in range(4):
+            columns, rows = 4, 3
+            for row in range(rows):
+                for column in range(columns):
                     if (row + column) % 2 == 0:
+                        left = court.x + column * court.width // columns
+                        right = court.x + (column + 1) * court.width // columns
+                        top = court.y + row * court.height // rows
+                        bottom = court.y + (row + 1) * court.height // rows
                         pygame.draw.rect(
                             surface,
                             pal.shade(pal.BLUE, 0.2),
-                            (rect.x + column * 14, rect.y + row * 13, 14, 13),
+                            (left, top, right - left, bottom - top),
                         )
-        elif s.field_style in ("grid", "neon"):
-            color = pal.shade(pal.NAVY, 1.5) if s.field_style == "grid" else pal.BLUE
-            for x in range(rect.x + 10, rect.right, 10):
-                pygame.draw.line(surface, color, (x, rect.y), (x, rect.bottom - 1))
-            if s.field_style == "neon":
-                pygame.draw.rect(surface, pal.UI_CYAN, rect, 1)
-        point = (rect.centerx + 4, rect.centery)
+        elif s.field_style == "grid":
+            for x in range(court.x + 10, court.right, 10):
+                pygame.draw.line(
+                    surface,
+                    pal.shade(pal.NAVY, 1.5),
+                    (x, court.y),
+                    (x, court.bottom - 1),
+                )
+            for y in range(court.y + 10, court.bottom, 10):
+                pygame.draw.line(
+                    surface,
+                    pal.shade(pal.NAVY, 1.5),
+                    (court.x, y),
+                    (court.right - 1, y),
+                )
+        elif s.field_style == "neon":
+            pygame.draw.rect(surface, pal.BLUE, court, 1)
+            pygame.draw.line(surface, pal.BLUE, court.midtop, court.midbottom)
+            pygame.draw.circle(surface, pal.BLUE, court.center, 5, 1)
+        point = (court.centerx + 4, court.centery)
         if s.trail:
             trail_color = {
                 "classic": pal.LIGHT_GREY,
@@ -1132,6 +1229,7 @@ class AppearanceScreen(MenuScreen):
             pygame.draw.circle(surface, pal.PINK, point, 2, 1)
         else:
             pygame.draw.circle(surface, pal.WHITE, point, 3)
+        pygame.draw.rect(surface, pal.UI_MUTED, rect, 1)
 
 
 class HowToPlayScreen(Screen):
