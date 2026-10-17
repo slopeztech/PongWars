@@ -2,6 +2,7 @@
 @brief Concrete screens: title, menus, match setup, match, pause, results and settings.
 """
 
+import math
 import random
 from dataclasses import replace
 
@@ -14,10 +15,12 @@ from pongwars.core.settings import (
     BACKGROUNDS,
     BALL_STYLES,
     FIELD_STYLES,
+    HUD_STYLES,
     PADDLE_COLOR_COUNT,
     PADDLE_SKIN_COUNT,
     SEATS,
     TRAIL_STYLES,
+    Settings,
 )
 from pongwars.domain import constants as c
 from pongwars.domain.arenas import ArenaSpec, arena_names, get_arena
@@ -36,8 +39,18 @@ from pongwars.input.controllers import (
     poll_spin,
 )
 from pongwars.render import palette as pal
+from pongwars.render.backgrounds import draw_background
 from pongwars.render.font import draw_text, text_width
-from pongwars.render.renderer import LOW_H, LOW_W, Renderer, RenderSettings
+from pongwars.render.renderer import (
+    BALL_LIFT,
+    LOW_H,
+    LOW_W,
+    PADDLE_HEIGHT,
+    Renderer,
+    RenderSettings,
+    ViewMode,
+)
+from pongwars.ui.appearance_preview import draw_field_style_icon
 from pongwars.ui.core import AppContext, Screen
 from pongwars.ui.widgets import Menu, MenuItem
 
@@ -54,14 +67,33 @@ MAX_SEED = 2**31 - 1
 BLINK_PERIOD = 1.0
 PREVIEW_BOX = (190, 100, 120, 68)
 APPEARANCE_MENU_W = 205
-PLAYER_PREVIEW_BOX = (258, 40, 54, 46)
-STYLE_PREVIEW_BOX = (258, 94, 54, 46)
+PLAYER_PREVIEW_BOX = (252, 40, 60, 46)
+STYLE_PREVIEW_BOX = (252, 94, 60, 46)
 VOLUME_STEP = 10
 MAX_VOLUME = 100
 MIN_SCALE = 2
 MAX_SCALE = 8
 OPTION_STEP_THRESHOLD = 50
 ROOM_NAME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_. ")
+
+
+def _make_render_settings(
+    settings: Settings, view: ViewMode = "shared", *, show_trail: bool | None = None
+) -> RenderSettings:
+    return RenderSettings(
+        particles=settings.particles,
+        trail=settings.trail if show_trail is None else show_trail,
+        shake=settings.shake,
+        scale=1,
+        view=view,
+        background=settings.background,
+        ball_style=settings.ball_style,
+        trail_style=settings.trail_style,
+        field_style=settings.field_style,
+        hud_style=settings.hud_style,
+        paddle_colors=tuple(settings.paddle_colors),
+        paddle_skins=tuple(settings.paddle_skins),
+    )
 
 
 def cycle(values: tuple[str, ...] | list[str], current: str, step: int) -> str:
@@ -390,9 +422,7 @@ class SetupScreen(MenuScreen):
             for spec in self._option_specs():
                 value = options.get(spec.name)
                 if isinstance(value, int | float) and not isinstance(value, bool):
-                    self.options[spec.name] = float(
-                        min(spec.maximum, max(spec.minimum, value))
-                    )
+                    self.options[spec.name] = float(min(spec.maximum, max(spec.minimum, value)))
         controllers = saved.get("controllers")
         if isinstance(controllers, list):
             valid = LAN_CONTROLLER_CHOICES if self.lan else CONTROLLER_CHOICES
@@ -633,19 +663,7 @@ class MatchScreen(Screen):
         self.config = config
         self.view = view or s.view
         self.world = World(config)
-        render_settings = RenderSettings(
-            particles=s.particles,
-            trail=s.trail,
-            shake=s.shake,
-            scale=1,
-            view="split" if self.view == "split" else "shared",
-            background=s.background,
-            ball_style=s.ball_style,
-            trail_style=s.trail_style,
-            field_style=s.field_style,
-            paddle_colors=tuple(s.paddle_colors),
-            paddle_skins=tuple(s.paddle_skins),
-        )
+        render_settings = _make_render_settings(s, "split" if self.view == "split" else "shared")
         self.renderer = Renderer(render_settings, config.seed, ctx.translator)
         self.humans = [config.controllers[i] == "human" for i in range(self.world.players)]
         self.controllers = [self._controller(i) for i in range(self.world.players)]
@@ -1068,13 +1086,43 @@ class AppearanceScreen(MenuScreen):
         """
         super().__init__(ctx)
         t, s = ctx.t, ctx.settings
+        self._preview_tick = 0
+        self.preview_world = World(
+            MatchConfig(
+                arena="crossfire",
+                controllers=("human",) * SEATS,
+                seed=0,
+            )
+        )
+        self.preview_hud_world = World(
+            MatchConfig(arena="crossfire", controllers=("human",) * SEATS, seed=1)
+        )
+        for seat, effect in enumerate(("shield", "slow_paddle", "drunk", "inverted")):
+            self.preview_hud_world.extras.apply_direct(effect, seat, [])
+        self.preview_hud_world.extras.weapons[3] = ("laser", 2)
+        self.preview_renderer = Renderer(_make_render_settings(s, show_trail=True), seed=0)
+        ball_position = self.preview_world.ball.pos
+        for offset in range(12, 0, -1):
+            self.preview_renderer.trail.push(
+                ball_position.x - offset * 1.4,
+                ball_position.y - offset * 0.7,
+            )
         items: list[MenuItem] = []
         for seat in range(SEATS):
+
+            def player_label(seat_number: int = seat) -> str:
+                return t("appearance.player", number=seat_number + 1)
+
+            def player_value(seat_number: int = seat) -> str:
+                return (
+                    f"{t(f'color.{s.paddle_colors[seat_number]}')} "
+                    f"{t(f'skin.{s.paddle_skins[seat_number]}')}"
+                )
+
             items.append(
                 MenuItem(
-                    lambda seat=seat: t("appearance.player", number=seat + 1),  # type: ignore[misc]
-                    lambda seat=seat: f"{t(f'color.{s.paddle_colors[seat]}')} "
-                    f"{t(f'skin.{s.paddle_skins[seat]}')}",
+                    player_label,
+                    player_value,
                     on_activate=lambda seat=seat: self._step_seat(  # type: ignore[misc]
                         s.paddle_skins, seat, 1, PADDLE_SKIN_COUNT
                     ),
@@ -1107,6 +1155,11 @@ class AppearanceScreen(MenuScreen):
                     lambda: t(f"field_style.{s.field_style}"),
                     on_adjust=self._field_style,
                 ),
+                MenuItem(
+                    lambda: t("appearance.hud_style"),
+                    lambda: t(f"hud_style.{s.hud_style}"),
+                    on_adjust=self._hud_style,
+                ),
             )
         )
         self.menu.set_items(items)
@@ -1135,101 +1188,155 @@ class AppearanceScreen(MenuScreen):
         s.field_style = cycle(FIELD_STYLES, s.field_style, step)
         s.save()
 
+    def _hud_style(self, step: int) -> None:
+        s = self.ctx.settings
+        s.hud_style = cycle(HUD_STYLES, s.hud_style, step)
+        s.save()
+
+    def update(self, dt: float) -> None:
+        """Advance the live preview's animation clocks."""
+        self._preview_tick += 1
+        self.preview_renderer.set_settings(
+            _make_render_settings(self.ctx.settings, show_trail=True)
+        )
+        self.preview_renderer.update(self.preview_world, dt)
+        self.preview_world.ball.rotation = (
+            self.preview_world.ball.rotation + max(0.0, dt) * 2.0
+        ) % math.tau
+
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Draw the rows and live player, ball and field previews.
         @param surface Low-resolution target.
         """
+        selected = self.menu.index
+        preview_settings = _make_render_settings(self.ctx.settings, show_trail=True)
+        if selected < SEATS:
+            color = self.ctx.settings.paddle_colors[selected]
+            skin = self.ctx.settings.paddle_skins[selected]
+            preview_settings = replace(
+                preview_settings,
+                paddle_colors=(color,) * SEATS,
+                paddle_skins=(skin,) * SEATS,
+            )
+        self.preview_renderer.set_settings(preview_settings)
+        preview = (
+            None
+            if selected == SEATS + 3
+            else self.preview_renderer.draw_hud_preview(self.preview_hud_world)
+            if selected == SEATS + 4
+            else self.preview_renderer.draw_preview(self.preview_world)
+        )
         _title(self.ctx, surface, self.title_key)
         self.menu.draw(surface, MENU_X, MENU_Y, APPEARANCE_MENU_W)
         self._draw_player_preview(surface)
-        self._draw_style_preview(surface)
+        self._draw_style_preview(surface, preview)
         _centered(surface, self.ctx.t("appearance.hint"), HINT_Y, pal.LIGHT_GREY)
 
     def _draw_player_preview(self, surface: pygame.Surface) -> None:
-        s = self.ctx.settings
+        settings = self.ctx.settings
         rect = pygame.Rect(*PLAYER_PREVIEW_BOX)
         pygame.draw.rect(surface, pal.NAVY, rect)
+        for seat, color_index in enumerate(settings.paddle_colors):
+            color = pal.PADDLE_PALETTE[color_index % len(pal.PADDLE_PALETTE)]
+            x = rect.x + 5 + seat * 15
+            pygame.draw.rect(surface, pal.UI_BACKGROUND, (x - 1, rect.y + 5, 10, 25))
+            pygame.draw.rect(surface, color, (x, rect.y + 6, 8, 23))
+            draw_text(surface, str(seat + 1), x + 2, rect.y + 36, pal.WHITE)
         pygame.draw.rect(surface, pal.UI_MUTED, rect, 1)
-        for seat in range(SEATS):
-            colour = pal.PADDLE_PALETTE[s.paddle_colors[seat] % len(pal.PADDLE_PALETTE)]
-            x = rect.x + 4 + seat * 12
-            pygame.draw.rect(surface, pal.UI_BACKGROUND, (x - 1, rect.y + 5, 8, 25))
-            pygame.draw.rect(surface, colour, (x, rect.y + 6, 6, 23))
-            if s.paddle_skins[seat] == 1:
-                for y in range(rect.y + 8, rect.y + 28, 5):
-                    pygame.draw.rect(surface, pal.WHITE, (x, y, 6, 2))
-            elif s.paddle_skins[seat] == 2:
-                pygame.draw.rect(surface, pal.WHITE, (x + 2, rect.y + 6, 2, 23))
-            elif s.paddle_skins[seat] == 3:
-                pygame.draw.rect(surface, pal.WHITE, (x, rect.y + 6, 6, 3))
-                pygame.draw.rect(surface, pal.WHITE, (x, rect.y + 26, 6, 3))
-            label = str(seat + 1)
-            draw_text(surface, label, x + (6 - text_width(label)) // 2, rect.y + 36, pal.WHITE)
 
-    def _draw_style_preview(self, surface: pygame.Surface) -> None:
-        s = self.ctx.settings
+    def _draw_style_preview(self, surface: pygame.Surface, frame: pygame.Surface | None) -> None:
         rect = pygame.Rect(*STYLE_PREVIEW_BOX)
         pygame.draw.rect(surface, pal.NAVY, rect)
-        court = rect.inflate(-4, -4)
-        if s.field_style == "checker":
-            columns, rows = 4, 3
-            for row in range(rows):
-                for column in range(columns):
-                    if (row + column) % 2 == 0:
-                        left = court.x + column * court.width // columns
-                        right = court.x + (column + 1) * court.width // columns
-                        top = court.y + row * court.height // rows
-                        bottom = court.y + (row + 1) * court.height // rows
-                        pygame.draw.rect(
-                            surface,
-                            pal.shade(pal.BLUE, 0.2),
-                            (left, top, right - left, bottom - top),
-                        )
-        elif s.field_style == "grid":
-            for x in range(court.x + 10, court.right, 10):
-                pygame.draw.line(
-                    surface,
-                    pal.shade(pal.NAVY, 1.5),
-                    (x, court.y),
-                    (x, court.bottom - 1),
+        inner = rect.inflate(-2, -2)
+        selected = self.menu.index
+        if selected == SEATS + 3:
+            draw_field_style_icon(surface, inner, self.ctx.settings.field_style)
+            pygame.draw.rect(surface, pal.UI_MUTED, rect, 1)
+            return
+        assert frame is not None
+        if selected < SEATS:
+            preview = self._paddle_preview_crop(frame, 0)
+        elif selected == SEATS:
+            preview = pygame.Surface(inner.size)
+            preview.fill(pal.BLACK)
+            draw_background(preview, self.ctx.settings.background, self._preview_tick)
+        elif selected == SEATS + 1:
+            point = self.preview_renderer.camera.project(
+                self.preview_world.ball.pos.x,
+                self.preview_world.ball.pos.y,
+                BALL_LIFT,
+            )
+            preview = self._crop_preview(
+                frame,
+                pygame.Rect(round(point.sx) - 12, round(point.sy) - 12, 24, 24),
+                inner.size,
+            )
+        elif selected == SEATS + 2:
+            trail_points = [
+                self.preview_renderer.camera.project(x, y, BALL_LIFT)
+                for x, y in self.preview_renderer.trail.points
+            ]
+            bounds = pygame.Rect(
+                round(min(point.sx for point in trail_points)) - 5,
+                round(min(point.sy for point in trail_points)) - 5,
+                round(
+                    max(point.sx for point in trail_points)
+                    - min(point.sx for point in trail_points)
                 )
-            for y in range(court.y + 10, court.bottom, 10):
-                pygame.draw.line(
-                    surface,
-                    pal.shade(pal.NAVY, 1.5),
-                    (court.x, y),
-                    (court.right - 1, y),
+                + 10,
+                round(
+                    max(point.sy for point in trail_points)
+                    - min(point.sy for point in trail_points)
                 )
-        elif s.field_style == "neon":
-            pygame.draw.rect(surface, pal.BLUE, court, 1)
-            pygame.draw.line(surface, pal.BLUE, court.midtop, court.midbottom)
-            pygame.draw.circle(surface, pal.BLUE, court.center, 5, 1)
-        point = (court.centerx + 4, court.centery)
-        if s.trail:
-            trail_color = {
-                "classic": pal.LIGHT_GREY,
-                "pixel": pal.WHITE,
-                "neon": pal.PINK,
-            }.get(s.trail_style, pal.LIGHT_GREY)
-            if s.trail_style == "pixel":
-                pygame.draw.rect(surface, trail_color, (point[0] - 15, point[1], 3, 3))
-                pygame.draw.rect(surface, trail_color, (point[0] - 10, point[1] - 2, 4, 4))
-            else:
-                pygame.draw.line(
-                    surface, trail_color, (point[0] - 14, point[1] + 1), (point[0] - 5, point[1])
-                )
-        if s.ball_style == "pixel":
-            pygame.draw.rect(surface, pal.ORANGE, (point[0] - 3, point[1] - 3, 7, 7))
-            pygame.draw.rect(surface, pal.WHITE, (point[0] - 1, point[1] - 1, 3, 3))
-        elif s.ball_style == "energy":
-            pygame.draw.circle(surface, pal.BLUE, point, 4)
-            pygame.draw.circle(surface, pal.WHITE, point, 2)
-        elif s.ball_style == "ring":
-            pygame.draw.circle(surface, pal.WHITE, point, 4)
-            pygame.draw.circle(surface, pal.PINK, point, 2, 1)
+                + 10,
+            )
+            preview = self._crop_preview(frame, bounds, inner.size)
         else:
-            pygame.draw.circle(surface, pal.WHITE, point, 3)
+            preview = frame
+        self._blit_preview_fit(surface, inner, preview)
         pygame.draw.rect(surface, pal.UI_MUTED, rect, 1)
+
+    def _paddle_preview_crop(self, frame: pygame.Surface, seat: int) -> pygame.Surface:
+        paddle = self.preview_world.paddles[seat]
+        rect = paddle.rect
+        projected = [
+            self.preview_renderer.camera.project(x, y, z)
+            for x in (rect.cx - rect.half_w, rect.cx + rect.half_w)
+            for y in (rect.cy - rect.half_h, rect.cy + rect.half_h)
+            for z in (0.0, PADDLE_HEIGHT)
+        ]
+        bounds = pygame.Rect(
+            round(min(point.sx for point in projected)) - 4,
+            round(min(point.sy for point in projected)) - 4,
+            round(max(point.sx for point in projected) - min(point.sx for point in projected)) + 8,
+            round(max(point.sy for point in projected) - min(point.sy for point in projected)) + 8,
+        )
+        return self._crop_preview(frame, bounds, (64, 44), rotate=True)
+
+    @staticmethod
+    def _crop_preview(
+        frame: pygame.Surface, bounds: pygame.Rect, size: tuple[int, int], *, rotate: bool = False
+    ) -> pygame.Surface:
+        crop = bounds.clip(frame.get_rect())
+        image = frame.subsurface(crop).copy()
+        if rotate:
+            image = pygame.transform.rotate(image, 90)
+        return pygame.transform.scale(image, size)
+
+    @staticmethod
+    def _blit_preview_fit(
+        surface: pygame.Surface, target: pygame.Rect, preview: pygame.Surface
+    ) -> None:
+        scale = min(target.width / preview.get_width(), target.height / preview.get_height())
+        size = (
+            max(1, round(preview.get_width() * scale)),
+            max(1, round(preview.get_height() * scale)),
+        )
+        fitted = pygame.transform.scale(preview, size)
+        surface.blit(
+            fitted,
+            (target.centerx - size[0] // 2, target.centery - size[1] // 2),
+        )
 
 
 class HowToPlayScreen(Screen):

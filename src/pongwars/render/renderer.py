@@ -32,7 +32,9 @@ from pongwars.render import palette as pal
 from pongwars.render.backgrounds import draw_background
 from pongwars.render.camera import DEFAULT_BACK, DEFAULT_FOCAL, DEFAULT_HEIGHT, Camera
 from pongwars.render.effects import Explosion, ParticleSystem, Shake, Trail
+from pongwars.render.extras_icons import PICKUP_ICONS
 from pongwars.render.font import GLYPH_H, draw_text, text_width
+from pongwars.render.hud import HUD_CATEGORY_COLORS, HUD_STYLES, HudRenderer
 
 LOW_W = 320
 LOW_H = 180
@@ -42,12 +44,8 @@ BALL_LIFT = 2.0
 SHAKE_GOAL = 4.0
 SHAKE_HIT = 1.0
 HUD_MARGIN = 4
-HUD_TOP = 3
 BIG_TEXT = 2
 SMALL_TEXT = 1
-LABEL_GAP = 8
-SHARED_SLOT_OFFSET = 20
-SHARED_DUEL_OFFSET = 30
 SIDE_FACE_SHADE = 0.45
 FRONT_FACE_SHADE = 0.6
 SEAT_TURNS = {3: 0, 1: 1, 2: 2, 0: 3}
@@ -64,44 +62,6 @@ PICKUP_BLINK_TICKS = 120
 PICKUP_BLINK_PERIOD = 6
 SHIELD_GAP = 1.5
 LASER_FRAMES = 6
-EFFECT_ROW = 7
-CATEGORY_COLORS = {
-    "power": pal.LIME,
-    "weapon": pal.ORANGE,
-    "penalty": pal.RED,
-    "status": pal.PINK,
-}
-PICKUP_ICONS = {
-    "big_paddle": ("11111", "10001", "10101", "10001", "11111"),
-    "speed_boost": ("00100", "00110", "11111", "01100", "00100"),
-    "magnet": ("10001", "10001", "10001", "11011", "01110"),
-    "shield": ("01110", "11111", "11111", "01110", "00100"),
-    "multiball": ("10101", "00000", "00100", "00000", "10101"),
-    "slow_mo": ("01110", "10001", "10111", "10001", "01110"),
-    "laser": ("00001", "00010", "11111", "01000", "10000"),
-    "freeze": ("10101", "01110", "11111", "01110", "10101"),
-    "bomb": ("00100", "01110", "11111", "11111", "01010"),
-    "small_paddle": ("00000", "01110", "01110", "00000", "00000"),
-    "inverted": ("10101", "01110", "00100", "01110", "10101"),
-    "slow_paddle": ("11111", "10001", "10001", "10001", "11111"),
-    "blind": ("00100", "01010", "10001", "01010", "00100"),
-    "stun": ("11111", "10101", "11111", "00100", "01010"),
-    "frozen": ("00100", "10101", "01110", "10101", "00100"),
-    "aim_assist": ("00100", "00100", "11111", "00100", "00100"),
-    "cleanse": ("00011", "00110", "01100", "11000", "10000"),
-    "slow_ball": ("01110", "10001", "10101", "10001", "01110"),
-    "cat": ("10101", "11111", "10101", "01110", "01010"),
-    "hex": ("01110", "11011", "10101", "11011", "01110"),
-    "warp": ("11001", "00110", "01100", "00110", "10011"),
-    "companion": ("01110", "10101", "01110", "00100", "01110"),
-    "headbutt": ("10000", "11000", "11110", "11000", "10000"),
-    "missile": ("00100", "01110", "11111", "00100", "00100"),
-    "turbo_ball": ("00001", "00011", "10110", "11100", "01000"),
-    "drunk": ("10001", "01010", "00100", "01010", "10001"),
-    "jammed": ("11011", "01010", "00100", "01010", "11011"),
-    "ramp": ("00001", "00011", "00111", "01111", "11111"),
-    "invasor": ("00100", "10101", "11111", "01110", "01010"),
-}
 ODD_TURN_ZOOM = 1.6
 KIND_COLORS = {
     "solid": pal.LAVENDER,
@@ -113,6 +73,7 @@ Point = tuple[float, float]
 Corner = tuple[float, float, float]
 ViewMode = Literal["shared", "split"]
 FACES = ((0, -1), (0, 1), (-1, 0), (1, 0))
+CATEGORY_COLORS = HUD_CATEGORY_COLORS
 
 
 @dataclass
@@ -128,6 +89,7 @@ class RenderSettings:
     ball_style: str = "classic"
     trail_style: str = "classic"
     field_style: str = "grid"
+    hud_style: str = "arcade"
     paddle_colors: tuple[int, ...] = (0, 1, 2, 3)
     paddle_skins: tuple[int, ...] = (0, 0, 0, 0)
 
@@ -175,6 +137,7 @@ class Renderer:
         """
         self.settings = settings or RenderSettings()
         self.translator = translator or Translator()
+        self.hud = HudRenderer()
         self.camera = Camera(LOW_W, LOW_H)
         self.surface = pygame.Surface((LOW_W, LOW_H))
         self._canvas = self.surface
@@ -185,8 +148,18 @@ class Renderer:
         self.explosions: list[Explosion] = []
         self._clock = 0
         self._ramp_incline = 0.0
+        self._field_layer: pygame.Surface | None = None
+        self._field_mask: pygame.Surface | None = None
         self.colors = [
             pal.PADDLE_PALETTE[i % len(pal.PADDLE_PALETTE)] for i in self.settings.paddle_colors
+        ]
+        self.colors += list(pal.PLAYER_COLORS[len(self.colors) :])
+
+    def set_settings(self, settings: RenderSettings) -> None:
+        """Replace visual options and refresh the per-seat paddle palette."""
+        self.settings = settings
+        self.colors = [
+            pal.PADDLE_PALETTE[i % len(pal.PADDLE_PALETTE)] for i in settings.paddle_colors
         ]
         self.colors += list(pal.PLAYER_COLORS[len(self.colors) :])
 
@@ -278,6 +251,35 @@ class Renderer:
         self._canvas = self.surface
         return self.surface
 
+    def draw_preview(self, world: World) -> pygame.Surface:
+        """Render the arena without HUD for use in the live appearance preview."""
+        self.surface.fill(pal.BLACK)
+        self._canvas = self.surface
+        view = Viewport(pygame.Rect(0, 0, LOW_W, LOW_H), None, 0)
+        self.camera = self._camera_for(view, world)
+        draw_background(self._canvas, self.settings.background, self._clock)
+        try:
+            self._draw_scene(world)
+        finally:
+            self._canvas = self.surface
+        return self.surface
+
+    def draw_hud_preview(self, world: World) -> pygame.Surface:
+        """Render a sample match HUD with the configured HUD appearance."""
+        self.surface.fill(pal.BLACK)
+        self._canvas = self.surface
+        self.camera = self._camera_for(Viewport(pygame.Rect(0, 0, LOW_W, LOW_H), None, 0), world)
+        self.hud.draw(
+            self.surface,
+            world,
+            self.camera,
+            self.translator,
+            self.colors,
+            self.settings.hud_style,
+            own_seat=None,
+        )
+        return self.surface
+
     def present(self, world: World, window: pygame.Surface) -> None:
         """@brief Draw and scale the frame onto a window with nearest-neighbour filtering.
         @param world World to draw.
@@ -314,8 +316,7 @@ class Renderer:
         self._draw_table(world)
         items: list[tuple[float, str, int]] = []
         items += [
-            (self._sort(portal.x, portal.y), "portal", i)
-            for i, portal in enumerate(world.portals)
+            (self._sort(portal.x, portal.y), "portal", i) for i, portal in enumerate(world.portals)
         ]
         items += [
             (self._sort(o.rect.cx, o.rect.cy), "obstacle", i)
@@ -418,6 +419,199 @@ class Renderer:
                 )
             for corners in ends:
                 self._quad(corners, pal.WHITE)
+        elif skin >= 4:
+            vertical = rect.half_h >= rect.half_w
+            long_size = 2 * (rect.half_h if vertical else rect.half_w)
+            short_size = 2 * (rect.half_w if vertical else rect.half_h)
+            accent = pal.shade(pal.WHITE, 0.82)
+
+            def point(fraction: float, across: float = 0.0) -> tuple[float, float]:
+                along = (fraction - 0.5) * long_size
+                across *= short_size / 2
+                return (
+                    (rect.cx + across, rect.cy + along)
+                    if vertical
+                    else (rect.cx + along, rect.cy + across)
+                )
+
+            def mark(fraction: float, size: float, color: pal.Color = accent) -> None:
+                px, py = point(fraction)
+                projected = self.camera.project(px, py, top + 0.1)
+                pygame.draw.circle(
+                    self._canvas,
+                    color,
+                    (round(projected.sx), round(projected.sy)),
+                    max(1, round(size * projected.scale)),
+                )
+
+            def line(
+                start: tuple[float, float], end: tuple[float, float], color: pal.Color = accent
+            ) -> None:
+                first = self.camera.project(*start, top + 0.1)
+                last = self.camera.project(*end, top + 0.1)
+                pygame.draw.line(
+                    self._canvas,
+                    color,
+                    (round(first.sx), round(first.sy)),
+                    (round(last.sx), round(last.sy)),
+                )
+
+            pattern = skin - 4
+            fractions = (0.2, 0.4, 0.6, 0.8)
+            if pattern == 0:
+                for fraction in fractions:
+                    mark(fraction, 0.5)
+            elif pattern == 1:
+                rows, columns = 4, 2
+                for row in range(rows):
+                    for column in range(columns):
+                        if (row + column) % 2:
+                            continue
+                        if vertical:
+                            xa = x0 + (x1 - x0) * column / columns
+                            xb = x0 + (x1 - x0) * (column + 1) / columns
+                            ya = y0 + (y1 - y0) * row / rows
+                            yb = y0 + (y1 - y0) * (row + 1) / rows
+                        else:
+                            xa = x0 + (x1 - x0) * row / rows
+                            xb = x0 + (x1 - x0) * (row + 1) / rows
+                            ya = y0 + (y1 - y0) * column / columns
+                            yb = y0 + (y1 - y0) * (column + 1) / columns
+                        self._quad(
+                            [(xa, ya, top), (xb, ya, top), (xb, yb, top), (xa, yb, top)],
+                            pal.shade(color, 0.48),
+                        )
+            elif pattern == 2:
+                for fraction in fractions:
+                    line(
+                        point(fraction - 0.04, -0.55),
+                        point(fraction, 0.0),
+                    )
+                    line(
+                        point(fraction, 0.0),
+                        point(fraction - 0.04, 0.55),
+                    )
+            elif pattern == 3:
+                for across in (-0.35, 0.35):
+                    line(point(0.05, across), point(0.95, across))
+            elif pattern == 4:
+                for fraction in fractions:
+                    line(point(fraction, -0.35), point(fraction, 0.35))
+            elif pattern == 5:
+                for fraction in (0.25, 0.5, 0.75):
+                    center_x, center_y = point(fraction)
+                    size = long_size * 0.07
+                    projected = [
+                        self.camera.project(px, py, top + 0.1)
+                        for px, py in (
+                            (center_x, center_y - size),
+                            (center_x + size, center_y),
+                            (center_x, center_y + size),
+                            (center_x - size, center_y),
+                        )
+                    ]
+                    pygame.draw.polygon(
+                        self._canvas,
+                        accent,
+                        [(round(p.sx), round(p.sy)) for p in projected],
+                        1,
+                    )
+            elif pattern == 6:
+                for fraction in (0.25, 0.5, 0.75):
+                    center_x, center_y = point(fraction)
+                    size = long_size * 0.07
+                    projected = [
+                        self.camera.project(px, py, top + 0.1)
+                        for px, py in (
+                            (center_x, center_y - size),
+                            (center_x + size, center_y + size),
+                            (center_x - size, center_y + size),
+                        )
+                    ]
+                    pygame.draw.polygon(
+                        self._canvas,
+                        accent,
+                        [(round(p.sx), round(p.sy)) for p in projected],
+                        1,
+                    )
+            elif pattern == 7:
+                wave_points = [
+                    self.camera.project(
+                        *point(fraction, math.sin(fraction * math.tau * 2) * 0.55),
+                        top + 0.1,
+                    )
+                    for fraction in [step / 24 for step in range(1, 24)]
+                ]
+                pygame.draw.lines(
+                    self._canvas,
+                    accent,
+                    False,
+                    [(round(p.sx), round(p.sy)) for p in wave_points],
+                )
+            elif pattern == 8:
+                for fraction in fractions:
+                    line(point(fraction, -0.7), point(fraction, 0.7))
+            elif pattern == 9:
+                line(point(0.05), point(0.95))
+                line(point(0.05, 0.45), point(0.95, 0.45), pal.shade(color, 0.55))
+            elif pattern == 10:
+                for fraction in fractions:
+                    line(
+                        point(fraction - 0.06, -0.55),
+                        point(fraction + 0.06, 0.55),
+                    )
+            elif pattern == 11:
+                zigzag = [
+                    self.camera.project(
+                        *point(fraction, -0.55 if step % 2 else 0.55),
+                        top + 0.1,
+                    )
+                    for step, fraction in enumerate([index / 16 for index in range(1, 16)])
+                ]
+                pygame.draw.lines(
+                    self._canvas,
+                    accent,
+                    False,
+                    [(round(p.sx), round(p.sy)) for p in zigzag],
+                )
+            elif pattern == 12:
+                for fraction in fractions:
+                    ring_projection = self.camera.project(*point(fraction), top + 0.1)
+                    pygame.draw.circle(
+                        self._canvas,
+                        accent,
+                        (round(ring_projection.sx), round(ring_projection.sy)),
+                        max(2, round(long_size * 0.09 * ring_projection.scale)),
+                        1,
+                    )
+                    pygame.draw.circle(
+                        self._canvas,
+                        color,
+                        (round(ring_projection.sx), round(ring_projection.sy)),
+                        1,
+                    )
+            elif pattern == 13:
+                for fraction in fractions:
+                    line(
+                        point(fraction - 0.035, -0.35),
+                        point(fraction + 0.035, 0.35),
+                    )
+            elif pattern == 14:
+                for fraction in fractions:
+                    line(
+                        point(fraction - 0.06, -0.5),
+                        point(fraction + 0.06, 0.5),
+                    )
+                    line(
+                        point(fraction - 0.06, 0.5),
+                        point(fraction + 0.06, -0.5),
+                    )
+            elif pattern == 15:
+                pulse = 0.55 + 0.4 * (0.5 + 0.5 * math.sin(self._clock / 5 + index + math.pi / 2))
+                self._quad(
+                    [(x0, y0, top), (x1, y0, top), (x1, y1, top), (x0, y1, top)],
+                    pal.shade(pal.WHITE, pulse),
+                )
 
     def _cat(self, world: World, index: int) -> None:
         cat = world.extras.cats[index]
@@ -474,17 +668,9 @@ class Renderer:
         else:
             self._quad([(0, 0, 0), (w, 0, 0), (w, h, 0), (0, h, 0)], pal.NAVY)
         field_style = (
-            self.settings.field_style
-            if self.settings.field_style in FIELD_STYLES
-            else "grid"
+            self.settings.field_style if self.settings.field_style in FIELD_STYLES else "grid"
         )
-        if field_style == "grid":
-            self._draw_grid()
-        elif field_style == "checker":
-            self._draw_checkerboard()
-        elif field_style == "neon":
-            self._draw_grid(pal.shade(pal.BLUE, 0.75))
-            self._draw_field_border(pal.UI_CYAN)
+        self._draw_field_pattern(field_style)
         self._draw_blind_zones(world)
         walls = (
             (world.players < 3 or not world.alive[2], 0.0),
@@ -515,6 +701,222 @@ class Renderer:
                     False,
                     [(round(point.sx), round(point.sy)) for point in points],
                 )
+
+    def _draw_field_pattern(self, style: str) -> None:
+        if style == "solid":
+            return
+        size = self._canvas.get_size()
+        if self._field_layer is None or self._field_layer.get_size() != size:
+            self._field_layer = pygame.Surface(size, pygame.SRCALPHA)
+            self._field_mask = pygame.Surface(size, pygame.SRCALPHA)
+        assert self._field_mask is not None
+        canvas = self._canvas
+        layer = self._field_layer
+        mask = self._field_mask
+        layer.fill((0, 0, 0, 0))
+        mask.fill((0, 0, 0, 0))
+        self._canvas = layer
+        try:
+            self._draw_field_pattern_unclipped(style)
+        finally:
+            self._canvas = canvas
+        boundary = (
+            ((0.0, 0.0), (c.FIELD_WIDTH, 0.0)),
+            ((c.FIELD_WIDTH, 0.0), (c.FIELD_WIDTH, c.FIELD_HEIGHT)),
+            ((c.FIELD_WIDTH, c.FIELD_HEIGHT), (0.0, c.FIELD_HEIGHT)),
+            ((0.0, c.FIELD_HEIGHT), (0.0, 0.0)),
+        )
+        boundary_points = [
+            self.camera.project(
+                start_x + (end_x - start_x) * step / 32,
+                start_y + (end_y - start_y) * step / 32,
+                0,
+            )
+            for (start_x, start_y), (end_x, end_y) in boundary
+            for step in range(32)
+        ]
+        pygame.draw.polygon(
+            mask,
+            (255, 255, 255, 255),
+            [(round(point.sx), round(point.sy)) for point in boundary_points],
+        )
+        layer.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        canvas.blit(layer, (0, 0))
+
+    def _draw_field_pattern_unclipped(self, style: str) -> None:
+        if style == "grid":
+            self._draw_grid()
+        elif style == "checker":
+            self._draw_checkerboard()
+        elif style == "neon":
+            self._draw_grid(pal.shade(pal.BLUE, 0.75))
+            self._draw_field_border(pal.UI_CYAN)
+        elif style in ("dots", "stars"):
+            for x in range(10, int(c.FIELD_WIDTH), 20):
+                for y in range(8, int(c.FIELD_HEIGHT), 16):
+                    point = self.camera.project(x, y, 0)
+                    center = (round(point.sx), round(point.sy))
+                    if style == "dots":
+                        pygame.draw.circle(self._canvas, pal.shade(pal.BLUE, 0.45), center, 1)
+                    else:
+                        color = pal.shade(pal.PINK if (x + y) % 3 else pal.WHITE, 0.65)
+                        pygame.draw.line(
+                            self._canvas,
+                            color,
+                            (center[0] - 1, center[1]),
+                            (center[0] + 1, center[1]),
+                        )
+                        pygame.draw.line(
+                            self._canvas,
+                            color,
+                            (center[0], center[1] - 1),
+                            (center[0], center[1] + 1),
+                        )
+        elif style in ("diagonal", "crosshatch"):
+            step = 20
+            color = pal.shade(pal.UI_CYAN if style == "diagonal" else pal.LAVENDER, 0.42)
+            for offset in range(-int(c.FIELD_HEIGHT), int(c.FIELD_WIDTH), step):
+                points = [
+                    self.camera.project(x, y, 0)
+                    for x, y in (
+                        (max(0, offset), max(0, -offset)),
+                        (
+                            min(c.FIELD_WIDTH, offset + c.FIELD_HEIGHT),
+                            min(c.FIELD_HEIGHT, c.FIELD_WIDTH - offset),
+                        ),
+                    )
+                ]
+                pygame.draw.line(
+                    self._canvas,
+                    color,
+                    (round(points[0].sx), round(points[0].sy)),
+                    (round(points[1].sx), round(points[1].sy)),
+                )
+                if style == "crosshatch":
+                    points = [
+                        self.camera.project(x, y, 0)
+                        for x, y in (
+                            (max(0, offset), min(c.FIELD_HEIGHT, c.FIELD_WIDTH - offset)),
+                            (min(c.FIELD_WIDTH, offset + c.FIELD_HEIGHT), max(0, -offset)),
+                        )
+                    ]
+                    pygame.draw.line(
+                        self._canvas,
+                        color,
+                        (round(points[0].sx), round(points[0].sy)),
+                        (round(points[1].sx), round(points[1].sy)),
+                    )
+        elif style in ("rings", "target", "radial"):
+            ring_center = self.camera.project(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2, 0)
+            for index, radius in enumerate(range(8, 49, 8)):
+                points = [
+                    self.camera.project(
+                        c.FIELD_WIDTH / 2 + math.cos(step * math.tau / 32) * radius,
+                        c.FIELD_HEIGHT / 2 + math.sin(step * math.tau / 32) * radius,
+                        0,
+                    )
+                    for step in range(33)
+                ]
+                pygame.draw.lines(
+                    self._canvas,
+                    pal.shade(pal.PINK if style == "target" else pal.BLUE, 0.35 + index * 0.08),
+                    False,
+                    [(round(point.sx), round(point.sy)) for point in points],
+                )
+            if style == "radial":
+                for angle in range(0, 360, 30):
+                    edge = self.camera.project(
+                        c.FIELD_WIDTH / 2 + math.cos(math.radians(angle)) * 75,
+                        c.FIELD_HEIGHT / 2 + math.sin(math.radians(angle)) * 38,
+                        0,
+                    )
+                    pygame.draw.line(
+                        self._canvas,
+                        pal.shade(pal.UI_CYAN, 0.4),
+                        (round(ring_center.sx), round(ring_center.sy)),
+                        (round(edge.sx), round(edge.sy)),
+                    )
+        elif style in ("stripes", "scanlines"):
+            step = 6 if style == "scanlines" else 12
+            color = pal.shade(pal.BLUE, 0.35 if style == "stripes" else 0.25)
+            for y in range(0, int(c.FIELD_HEIGHT), step):
+                points = [
+                    self.camera.project(x, y, 0) for x in range(0, int(c.FIELD_WIDTH) + 1, 10)
+                ]
+                pygame.draw.lines(
+                    self._canvas,
+                    color,
+                    False,
+                    [(round(point.sx), round(point.sy)) for point in points],
+                )
+        elif style == "waves":
+            for band in range(5):
+                points = [
+                    self.camera.project(
+                        x,
+                        c.FIELD_HEIGHT * (band + 1) / 6
+                        + math.sin(x / 9 + self._clock / 12 + band) * 3,
+                        0,
+                    )
+                    for x in range(0, int(c.FIELD_WIDTH) + 1, 4)
+                ]
+                pygame.draw.lines(
+                    self._canvas,
+                    pal.shade(pal.BLUE, 0.45),
+                    False,
+                    [(round(point.sx), round(point.sy)) for point in points],
+                )
+        elif style in ("diamonds", "boxes", "maze", "circuit", "lanes", "sparkle"):
+            color = pal.shade(pal.UI_CYAN if style in ("circuit", "sparkle") else pal.BLUE, 0.48)
+            for x in range(0, int(c.FIELD_WIDTH), 20):
+                for y in range(0, int(c.FIELD_HEIGHT), 15):
+                    if style == "lanes":
+                        if x % 40 == 0:
+                            points = [
+                                self.camera.project(x, yy, 0)
+                                for yy in range(0, int(c.FIELD_HEIGHT) + 1, 5)
+                            ]
+                            pygame.draw.lines(
+                                self._canvas,
+                                color,
+                                False,
+                                [(round(p.sx), round(p.sy)) for p in points],
+                            )
+                        continue
+                    if style == "sparkle":
+                        sparkle_center = self.camera.project(x + 10, y + 7, 0)
+                        cx, cy = round(sparkle_center.sx), round(sparkle_center.sy)
+                        pygame.draw.line(self._canvas, color, (cx - 2, cy), (cx + 2, cy))
+                        pygame.draw.line(self._canvas, color, (cx, cy - 2), (cx, cy + 2))
+                        continue
+                    if style == "circuit" and (x + y) % 40:
+                        continue
+                    if style == "maze" and (x // 20 + y // 15) % 2:
+                        continue
+                    corners = (
+                        [
+                            (x + 10, y, 0),
+                            (x + 20, y + 7.5, 0),
+                            (x + 10, y + 15, 0),
+                            (x, y + 7.5, 0),
+                        ]
+                        if style == "diamonds"
+                        else [(x, y, 0), (x + 20, y, 0), (x + 20, y + 15, 0), (x, y + 15, 0)]
+                    )
+                    projected = [self.camera.project(px, py, 0) for px, py, _ in corners]
+                    pygame.draw.lines(
+                        self._canvas,
+                        color,
+                        True,
+                        [(round(point.sx), round(point.sy)) for point in projected],
+                    )
+                    if style == "circuit":
+                        pygame.draw.circle(
+                            self._canvas,
+                            pal.UI_CYAN,
+                            (round(projected[0].sx), round(projected[0].sy)),
+                            1,
+                        )
 
     def _draw_checkerboard(self) -> None:
         columns, rows = 8, 6
@@ -590,17 +992,29 @@ class Renderer:
         self._canvas.blit(overlay, (0, 0))
 
     def _blind_ball_colors(self, ball: Ball) -> tuple[pal.Color, ...]:
-        style = (
-            self.settings.ball_style
-            if self.settings.ball_style in BALL_STYLES
-            else "classic"
-        )
+        style = self.settings.ball_style if self.settings.ball_style in BALL_STYLES else "classic"
         colors = {
             "classic": (pal.WHITE,),
             "pixel": (pal.ORANGE, pal.WHITE, pal.YELLOW),
             "energy": (pal.BLUE, pal.WHITE, pal.UI_CYAN),
             "ring": (pal.WHITE, pal.PINK),
-        }[style]
+            "star": (pal.YELLOW, pal.WHITE),
+            "crystal": (pal.UI_CYAN, pal.BLUE, pal.WHITE),
+            "sun": (pal.ORANGE, pal.YELLOW),
+            "target": (pal.WHITE, pal.RED),
+            "moon": (pal.LAVENDER, pal.WHITE),
+            "flower": (pal.PINK, pal.YELLOW),
+            "dice": (pal.WHITE, pal.BLACK),
+            "eye": (pal.BLUE, pal.WHITE),
+            "atom": (pal.UI_CYAN, pal.PINK),
+            "gear": (pal.LIGHT_GREY, pal.WHITE),
+            "prism": (pal.LIME, pal.BLUE, pal.PINK),
+            "comet": (pal.ORANGE, pal.WHITE),
+            "bubble": (pal.UI_CYAN, pal.WHITE),
+            "spiral": (pal.PINK, pal.WHITE),
+            "cross": (pal.LIME, pal.WHITE),
+            "heart": (pal.RED, pal.PINK),
+        }.get(style, (pal.WHITE,))
         if ball.spin_rate > 0:
             return (*colors, pal.ORANGE)
         if ball.spin_rate < 0:
@@ -764,22 +1178,41 @@ class Renderer:
     def _ball(self, world: World, index: int = 0) -> None:
         ball = world.balls[index]
         if self.settings.trail and index == 0:
+            trail_colors = {
+                "neon": (pal.BLUE, pal.PINK, pal.ORANGE),
+                "comet": (pal.ORANGE, pal.YELLOW, pal.WHITE),
+                "dotted": (pal.WHITE, pal.UI_CYAN),
+                "rainbow": (pal.RED, pal.ORANGE, pal.YELLOW, pal.LIME, pal.BLUE, pal.PINK),
+                "flame": (pal.YELLOW, pal.ORANGE, pal.RED),
+                "frost": (pal.WHITE, pal.UI_CYAN, pal.BLUE),
+                "spark": (pal.YELLOW, pal.WHITE, pal.ORANGE),
+                "stars": (pal.WHITE, pal.YELLOW, pal.LAVENDER),
+                "glitch": (pal.PINK, pal.UI_CYAN, pal.LIME),
+                "orbit": (pal.LAVENDER, pal.PINK, pal.BLUE),
+            }
             for age, (tx, ty) in enumerate(self.trail.points):
                 p = self.camera.project(tx, ty, BALL_LIFT)
                 shade = (age + 1) / (len(self.trail.points) + 1)
                 radius = max(1, round(ball.radius * p.scale * shade * 0.6))
+                if self.settings.trail_style == "fade":
+                    radius = max(1, round(radius * shade))
                 center = (round(p.sx), round(p.sy))
                 trail_style = (
                     self.settings.trail_style
                     if self.settings.trail_style in TRAIL_STYLES
                     else "classic"
                 )
+                colors = trail_colors.get(trail_style)
                 color = (
-                    (pal.BLUE, pal.PINK, pal.ORANGE)[age % 3]
-                    if trail_style == "neon"
+                    colors[age % len(colors)]
+                    if colors
                     else pal.shade(pal.WHITE, 0.4 * shade + 0.2)
+                    if trail_style in ("classic", "fade")
+                    else pal.shade(pal.BLUE, 0.5 * shade + 0.2)
                 )
-                if trail_style == "pixel":
+                if trail_style == "fade":
+                    color = pal.shade(pal.LAVENDER, 0.35 + shade * 0.65)
+                if trail_style in ("pixel", "glitch"):
                     pygame.draw.rect(
                         self._canvas,
                         color,
@@ -789,6 +1222,71 @@ class Renderer:
                             radius * 2 + 1,
                             radius * 2 + 1,
                         ),
+                    )
+                elif trail_style == "squares":
+                    pygame.draw.rect(
+                        self._canvas,
+                        color,
+                        (center[0] - radius // 2, center[1] - radius // 2, radius + 1, radius + 1),
+                    )
+                elif trail_style in ("rings", "orbit"):
+                    pygame.draw.circle(self._canvas, color, center, radius, 1)
+                elif trail_style == "ripple":
+                    pygame.draw.circle(self._canvas, color, center, radius, 1)
+                    pygame.draw.circle(self._canvas, color, center, radius + 2, 1)
+                elif trail_style == "double":
+                    pygame.draw.circle(self._canvas, color, (center[0] - 2, center[1]), radius)
+                    pygame.draw.circle(
+                        self._canvas,
+                        color,
+                        (center[0] + 2, center[1]),
+                        radius,
+                    )
+                elif trail_style == "ribbon":
+                    pygame.draw.line(
+                        self._canvas,
+                        color,
+                        (center[0] - radius * 2, center[1] + 2),
+                        (center[0] + radius * 2, center[1] - 2),
+                        max(1, radius),
+                    )
+                elif trail_style == "dash":
+                    pygame.draw.line(
+                        self._canvas,
+                        color,
+                        (center[0] - radius * 2, center[1]),
+                        (center[0] + radius * 2, center[1]),
+                        max(1, radius),
+                    )
+                elif trail_style == "comet":
+                    pygame.draw.line(
+                        self._canvas,
+                        color,
+                        (center[0] - radius * 2, center[1] + radius),
+                        center,
+                        max(1, radius),
+                    )
+                    pygame.draw.circle(self._canvas, color, center, radius)
+                elif trail_style == "dotted":
+                    pygame.draw.circle(self._canvas, color, center, max(1, radius // 2))
+                elif trail_style == "frost":
+                    pygame.draw.rect(
+                        self._canvas,
+                        color,
+                        (center[0] - radius, center[1] - radius, radius * 2 + 1, radius * 2 + 1),
+                    )
+                elif trail_style == "spark":
+                    pygame.draw.line(
+                        self._canvas,
+                        color,
+                        (center[0] - radius, center[1]),
+                        (center[0] + radius, center[1]),
+                    )
+                    pygame.draw.line(
+                        self._canvas,
+                        color,
+                        (center[0], center[1] - radius),
+                        (center[0], center[1] + radius),
                     )
                 else:
                     pygame.draw.circle(self._canvas, color, center, radius)
@@ -825,7 +1323,7 @@ class Renderer:
             pygame.draw.circle(self._canvas, pal.WHITE, center, radius)
             pygame.draw.circle(self._canvas, pal.PINK, center, max(1, radius - 1), 1)
         else:
-            pygame.draw.circle(self._canvas, pal.WHITE, center, radius)
+            self._draw_ball_detail(ball_style, center, radius, ball.rotation)
         mark = (
             max(
                 0,
@@ -858,6 +1356,143 @@ class Renderer:
                 else pal.WHITE
             ),
         )
+
+    def _draw_ball_detail(
+        self, style: str, center: tuple[int, int], radius: int, rotation: float
+    ) -> None:
+        colors = {
+            "star": pal.YELLOW,
+            "crystal": pal.UI_CYAN,
+            "sun": pal.ORANGE,
+            "target": pal.WHITE,
+            "moon": pal.LAVENDER,
+            "flower": pal.PINK,
+            "dice": pal.WHITE,
+            "eye": pal.WHITE,
+            "atom": pal.UI_CYAN,
+            "gear": pal.LIGHT_GREY,
+            "prism": pal.PINK,
+            "comet": pal.ORANGE,
+            "bubble": pal.BLUE,
+            "spiral": pal.LAVENDER,
+            "cross": pal.LIME,
+            "heart": pal.RED,
+        }
+        color = colors.get(style, pal.WHITE)
+        cx, cy = center
+        pygame.draw.circle(self._canvas, color, center, radius)
+        if style == "star":
+            vertices = [
+                (
+                    cx + round(math.cos(rotation + i * math.tau / 5) * radius),
+                    cy + round(math.sin(rotation + i * math.tau / 5) * radius),
+                )
+                for i in range(5)
+            ]
+            pygame.draw.polygon(self._canvas, pal.WHITE, vertices, 1)
+        elif style == "crystal":
+            pygame.draw.polygon(
+                self._canvas,
+                pal.WHITE,
+                [(cx, cy - radius), (cx + radius, cy), (cx, cy + radius), (cx - radius, cy)],
+                1,
+            )
+        elif style == "sun":
+            for spoke in range(8):
+                angle = rotation + spoke * math.tau / 8
+                start = (
+                    cx + round(math.cos(angle) * (radius + 1)),
+                    cy + round(math.sin(angle) * (radius + 1)),
+                )
+                end = (
+                    cx + round(math.cos(angle) * (radius + 3)),
+                    cy + round(math.sin(angle) * (radius + 3)),
+                )
+                pygame.draw.line(self._canvas, pal.YELLOW, start, end)
+        elif style == "target":
+            pygame.draw.circle(self._canvas, pal.RED, center, max(1, radius * 2 // 3), 1)
+            pygame.draw.circle(self._canvas, pal.YELLOW, center, max(1, radius // 3), 1)
+        elif style == "moon":
+            pygame.draw.circle(self._canvas, pal.WHITE, (cx - 1, cy), radius, 1)
+            pygame.draw.circle(
+                self._canvas, pal.NAVY, (cx + radius // 2, cy - radius // 4), max(1, radius - 1)
+            )
+        elif style == "flower":
+            for petal in range(6):
+                angle = rotation + petal * math.tau / 6
+                pos = (
+                    cx + round(math.cos(angle) * radius // 2),
+                    cy + round(math.sin(angle) * radius // 2),
+                )
+                pygame.draw.circle(self._canvas, pal.WHITE, pos, max(1, radius // 3))
+        elif style == "dice":
+            for dx, dy in ((-1, -1), (1, -1), (0, 0), (-1, 1), (1, 1)):
+                pygame.draw.circle(self._canvas, pal.NAVY, (cx + dx, cy + dy), 1)
+        elif style == "eye":
+            pygame.draw.ellipse(
+                self._canvas, pal.NAVY, (cx - radius, cy - radius // 2, radius * 2, radius)
+            )
+            pygame.draw.circle(self._canvas, pal.UI_CYAN, center, max(1, radius // 3))
+        elif style == "atom":
+            pygame.draw.ellipse(
+                self._canvas, pal.WHITE, (cx - radius, cy - radius // 2, radius * 2, radius), 1
+            )
+            pygame.draw.ellipse(
+                self._canvas, pal.WHITE, (cx - radius // 2, cy - radius, radius, radius * 2), 1
+            )
+            pygame.draw.circle(self._canvas, pal.PINK, center, 1)
+        elif style == "gear":
+            for tooth in range(8):
+                angle = rotation + tooth * math.tau / 8
+                start = (cx + round(math.cos(angle) * radius), cy + round(math.sin(angle) * radius))
+                end = (
+                    cx + round(math.cos(angle) * (radius + 2)),
+                    cy + round(math.sin(angle) * (radius + 2)),
+                )
+                pygame.draw.line(self._canvas, pal.WHITE, start, end)
+        elif style == "prism":
+            pygame.draw.polygon(
+                self._canvas,
+                pal.WHITE,
+                [(cx, cy - radius), (cx + radius, cy + radius), (cx - radius, cy + radius)],
+                1,
+            )
+        elif style == "comet":
+            pygame.draw.line(
+                self._canvas,
+                pal.YELLOW,
+                (cx - radius * 3, cy + radius),
+                (cx, cy),
+                max(1, radius // 2),
+            )
+            pygame.draw.line(
+                self._canvas, pal.WHITE, (cx - radius * 2, cy + radius * 2), (cx, cy), 1
+            )
+        elif style == "bubble":
+            pygame.draw.circle(self._canvas, pal.WHITE, center, radius, 1)
+            pygame.draw.circle(self._canvas, pal.WHITE, (cx - radius // 2, cy - radius // 2), 1)
+        elif style == "spiral":
+            pygame.draw.arc(
+                self._canvas,
+                pal.WHITE,
+                (cx - radius, cy - radius, radius * 2, radius * 2),
+                rotation,
+                rotation + math.pi * 1.5,
+                1,
+            )
+        elif style == "cross":
+            pygame.draw.line(self._canvas, pal.WHITE, (cx - radius, cy), (cx + radius, cy), 1)
+            pygame.draw.line(self._canvas, pal.WHITE, (cx, cy - radius), (cx, cy + radius), 1)
+        elif style == "heart":
+            pygame.draw.circle(
+                self._canvas, pal.PINK, (cx - radius // 3, cy - radius // 4), max(1, radius // 2)
+            )
+            pygame.draw.circle(
+                self._canvas, pal.PINK, (cx + radius // 3, cy - radius // 4), max(1, radius // 2)
+            )
+            pygame.draw.polygon(
+                self._canvas, pal.PINK, [(cx - radius, cy), (cx + radius, cy), (cx, cy + radius)]
+            )
 
     def _missile(self, world: World, index: int) -> None:
         missile = world.extras.missiles[index]
@@ -981,15 +1616,8 @@ class Renderer:
                 ring_radius = max(1, round(radius * (1.0 - offset)))
                 pygame.draw.circle(self._canvas, color, center, ring_radius, 1)
 
-    def _seat_label(self, seat: int) -> str:
-        return self.translator.translate("hud.player", number=seat + 1).upper()
-
     def _draw_hud(self, world: World, view: Viewport) -> None:
         w, h = view.rect.size
-        if view.seat is None:
-            score_positions = self._draw_shared_scores(world, w)
-        else:
-            score_positions = self._draw_split_scores(world, view.seat, w)
         message = None
         message_y = h // 2
         if world.phase is Phase.SERVING:
@@ -1015,107 +1643,40 @@ class Renderer:
                 )
         elif world.phase is Phase.FINISHED and world.winner is not None:
             message = self.translator.translate(
-                "match.score.winner", player=self._seat_label(world.winner)
+                "match.score.winner",
+                player=self.translator.translate("hud.player", number=world.winner + 1).upper(),
             )
         if message:
             text = message.upper()
             size = BIG_TEXT if world.countdown_number is not None else SMALL_TEXT
             x = (w - text_width(text, size)) // 2
             draw_text(self._canvas, text, x, message_y, pal.WHITE, size)
+        clock: str | None = None
         if world.config.mode == "timed":
             duration = world.mode.values["duration_seconds"]
             remaining = max(0, duration * c.TICK_RATE - world.tick)
             seconds = (remaining + c.TICK_RATE - 1) // c.TICK_RATE
             clock = f"{seconds // 60:02d}:{seconds % 60:02d}"
+        pickup_labels_top = self.hud.draw(
+            self._canvas,
+            world,
+            self.camera,
+            self.translator,
+            self.colors,
+            self.settings.hud_style if self.settings.hud_style in HUD_STYLES else "arcade",
+            own_seat=view.seat,
+        )
+        if clock is not None:
+            clock_y = (
+                pickup_labels_top - GLYPH_H - HUD_MARGIN
+                if pickup_labels_top is not None
+                else h - GLYPH_H - HUD_MARGIN
+            )
             draw_text(
                 self._canvas,
                 clock,
                 (w - text_width(clock, SMALL_TEXT)) // 2,
-                h - GLYPH_H - HUD_MARGIN,
+                max(0, clock_y),
                 pal.YELLOW,
                 SMALL_TEXT,
             )
-        self._draw_effects(world, score_positions, view.seat)
-
-    def _draw_effects(
-        self, world: World, positions: dict[int, tuple[int, int]], own_seat: int | None
-    ) -> None:
-        line_height = GLYPH_H * SMALL_TEXT + 1
-        width = self._canvas.get_width()
-        occupied: list[pygame.Rect] = []
-        for seat, (x, y) in positions.items():
-            labels = [
-                f"{self.translator.translate(f'extras.{effect.name}.name')} "
-                f"{effect.remaining // c.TICK_RATE + 1}"
-                for effect in world.extras.active[seat]
-            ]
-            weapon = world.extras.weapons[seat]
-            if weapon is not None:
-                name = self.translator.translate(f"extras.{weapon[0]}.name")
-                labels.append(f"{name} X{weapon[1]}")
-            for row, label in enumerate(labels):
-                label_width = text_width(label, SMALL_TEXT)
-                left = 0
-                right = width
-                if own_seat is None and world.players > SPLIT_COLUMNS:
-                    left = 0 if seat in (0, 2) else width // SPLIT_COLUMNS
-                    right = left + width // SPLIT_COLUMNS
-                label_x = min(max(x, left), max(left, right - label_width))
-                row_y = y + row * line_height
-                if own_seat is None and world.players > SPLIT_COLUMNS and seat >= SPLIT_COLUMNS:
-                    row_y += 2 * line_height
-                label_rect = pygame.Rect(label_x, row_y, label_width, line_height)
-                while any(label_rect.colliderect(placed) for placed in occupied):
-                    row_y += line_height
-                    label_rect.y = row_y
-                occupied.append(label_rect)
-                draw_text(
-                    self._canvas,
-                    label,
-                    label_x,
-                    row_y,
-                    self.colors[seat],
-                    SMALL_TEXT,
-                )
-
-    def _draw_shared_scores(self, world: World, w: int) -> dict[int, tuple[int, int]]:
-        mid = w // 2
-        slots = [
-            HUD_MARGIN,
-            w - HUD_MARGIN,
-            mid - SHARED_SLOT_OFFSET,
-            mid + SHARED_SLOT_OFFSET,
-        ]
-        if world.players == SPLIT_COLUMNS:
-            slots = [mid - SHARED_DUEL_OFFSET, mid + SHARED_DUEL_OFFSET]
-        positions: dict[int, tuple[int, int]] = {}
-        for seat, score in enumerate(world.scores):
-            x = slots[seat]
-            color = self.colors[seat] if world.alive[seat] else pal.DARK_GREY
-            label, value = self._seat_label(seat), str(score)
-            width = max(text_width(value, BIG_TEXT), text_width(label, SMALL_TEXT))
-            if world.players > SPLIT_COLUMNS and seat == 1:
-                x -= width
-            elif world.players == SPLIT_COLUMNS:
-                x -= width // 2
-            draw_text(self._canvas, label, x, HUD_TOP, color, SMALL_TEXT)
-            draw_text(self._canvas, value, x, HUD_TOP + LABEL_GAP, color, BIG_TEXT)
-            positions[seat] = (
-                x,
-                HUD_TOP + LABEL_GAP + BIG_TEXT * GLYPH_H + HUD_MARGIN,
-            )
-        return positions
-
-    def _draw_split_scores(self, world: World, own: int, w: int) -> dict[int, tuple[int, int]]:
-        x = HUD_MARGIN
-        positions: dict[int, tuple[int, int]] = {}
-        for seat in sorted(range(world.players), key=lambda s: s != own):
-            color = self.colors[seat] if world.alive[seat] else pal.DARK_GREY
-            text = f"{self._seat_label(seat)} {world.scores[seat]}"
-            size = BIG_TEXT if seat == own else SMALL_TEXT
-            if x + text_width(text, size) > w:
-                break
-            draw_text(self._canvas, text, x, HUD_TOP, color, size)
-            positions[seat] = (x, HUD_TOP + max(size, SMALL_TEXT) * GLYPH_H + HUD_MARGIN)
-            x += text_width(text, size) + HUD_MARGIN
-        return positions

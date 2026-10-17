@@ -33,13 +33,11 @@ Main menu entries:
 Every match is configured before it starts, with a live preview of the arena:
 
 - **Mode**: Classic, Timed, Survival, King of the Table (each exposes its own options,
-  such as points to win, duration or lives).
-- **Arena**: Classic, Pillars, Bumpers, Moving Walls, Fortress, Monolith, Orbital, Portal,
-  Pinball (2 players);
-  Trident (3 players); Crossfire (4 players). Choosing an arena sets the number of seats.
-  Monolith adds a central barrier, Orbital has pairs of circularly moving bumpers, and
-  Pinball places symmetric bumpers around the table. Portal places a randomly positioned pair
-  that transports the ball to the other portal while preserving its direction and reducing speed.
+  such as points to win, duration or lives). See the [game modes guide](game-modes.md)
+  for scoring rules and option ranges.
+- **Arena**: choose from thirteen layouts. Trident is for three players and Crossfire
+  for four; choosing an arena sets the number of seats. See the [arena guide](arenas.md)
+  for the complete catalog and obstacle details.
 - **Players**: each seat is *human* or *AI*; AI seats have a difficulty
   (easy, normal, hard, insane) and strategy.
 - **Extras**: off, all, powers only, weapons only or penalties only.
@@ -74,16 +72,11 @@ keys); a key already in use is rejected.
 - Obstacles: *bumpers* bounce the ball with extra force, *solid* walls just reflect it and
   *destructible* blocks break after being hit.
 - **Extras** appear on the field when enabled:
-  - **Powers** (big paddle, speed, magnet, shield, multiball, slow motion, aim assist,
-    cleanse, slow ball, turbo ball and **companion**) help you. A companion is a small AI
-    paddle that protects your goal for a few seconds.
-  - **Weapons** (laser, freeze, bomb, **cat**, hex, warp, **headbutt** and **missile**) have limited ammo; fire with your
-    fire key. The cat chases the ball for a few seconds and randomly changes its direction
-    and speed. Headbutt lunges your paddle forward; a hit during the lunge becomes a fast
-    smash. Missile gives you two shots that stun a rival or damage a destructible arena block.
-  - **Penalties** (small paddle, inverted controls, slowness, blindness, drunk, jammed) hurt
-    you. Blindness covers your side of the arena with colors matching the current ball.
-  - If extras are enabled and the score gap reaches three points, a short-lived bonus pickup
+  - Pickups are collected by the ball. Powers help you, weapons have limited ammo and
+    penalties make play harder.
+  - See the [extras guide](extras.md) for every effect, duration, weapon ammunition,
+    and special comeback pickup rules.
+  - If extras are enabled and the score gap reaches two points, a short-lived bonus pickup
     may appear along the losing or leading player's paddle path, at most once every 15 seconds
     and only when no other pickup is on the table. At most two pickups are visible at once,
     and they are kept apart. Collect comeback pickups by moving the paddle over them; normal
@@ -95,10 +88,10 @@ keys); a key already in use is rejected.
 
 ## Appearance and music
 
-**Appearance** in the main menu lets each seat pick a paddle colour (8) and style (4),
-choose from four ball models, three ball-trail styles and four arena-field styles, and
-select an animated background (none, grid, stars, rain, waves, aurora). Choices are saved
-automatically and previewed on screen.
+**Appearance** in the main menu offers 24 paddle colours, 20 paddle patterns, 20 ball
+designs, 19 ball-trail styles, 20 arena-field styles and 22 background choices.
+Selections are previewed immediately and saved automatically. See the
+[appearance guide](appearance.md) for the complete catalog and controls.
 Songs play in random order (never the same one twice in a row) in the menus and during matches, with 2-3 seconds of silence between them. A pixel-art music card appears in the lower-right corner for five seconds when a song starts. The first menu song is different from the one that started the previous launch.
 **How to play** is an in-game guide (6 pages: goal, controls, modes, powers, weapons,
 penalties); use Left/Right to turn pages.
@@ -127,7 +120,10 @@ Changes are applied and saved automatically to
 
 - **Language**: copy `src/pongwars/data/locales/en.json` to `<code>.json`, translate the values
   and set `language.name`; it appears in Settings automatically.
-- **Arena**: add a TOML file in `src/pongwars/data/arenas/`.
+- **Arena**: add a TOML file in `src/pongwars/data/arenas/` and document its layout in
+  the [arena guide](arenas.md).
+- **Documentation**: every new feature or change to existing behavior must update the
+  relevant guide. See [Development and contribution](development.md#documentation-is-part-of-the-change).
 - **Sounds**: edit `src/pongwars/data/audio/sounds.toml`.
 - **Songs**: drop a `.pws` file in `src/pongwars/data/music/` (format in
   [music-format.md](music-format.md)).

@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from enum import Enum
 
+from pongwars.core.settings import PADDLE_COLOR_COUNT, PADDLE_SKIN_COUNT
 from pongwars.domain.config import MatchConfig
 from pongwars.domain.events import Event
 from pongwars.domain.world import World
@@ -134,8 +135,8 @@ class ClientSession:
             self.state = ClientState.REJECTED
         elif isinstance(message, Roster):
             self.roster = [str(n) for n in message.names]
-            self.colors = _fit_lobby_values(message.colors, len(self.roster), 8)
-            self.skins = _fit_lobby_values(message.skins, len(self.roster), 4)
+            self.colors = _fit_lobby_values(message.colors, len(self.roster), PADDLE_COLOR_COUNT)
+            self.skins = _fit_lobby_values(message.skins, len(self.roster), PADDLE_SKIN_COUNT)
         elif isinstance(message, Start):
             self._on_start(message)
         elif isinstance(message, Snapshot):
@@ -173,8 +174,10 @@ class ClientSession:
             except (ValueError, TypeError, KeyError):
                 return
             self.config = config
-            self.colors = _fit_lobby_values(start.colors, len(config.controllers), 8)
-            self.skins = _fit_lobby_values(start.skins, len(config.controllers), 4)
+            self.colors = _fit_lobby_values(
+                start.colors, len(config.controllers), PADDLE_COLOR_COUNT
+            )
+            self.skins = _fit_lobby_values(start.skins, len(config.controllers), PADDLE_SKIN_COUNT)
             self._last_snapshot = -1
             self._prev = self._curr = None
         self.state = ClientState.PLAYING
@@ -184,11 +187,11 @@ class ClientSession:
         """@brief Update this client's seat appearance in the shared lobby."""
         if self.state is not ClientState.LOBBY or self.seat < 0:
             return
-        if color is not None and 0 <= color < 8:
+        if color is not None and 0 <= color < PADDLE_COLOR_COUNT:
             while len(self.colors) <= self.seat:
                 self.colors.append(0)
             self.colors[self.seat] = color
-        if skin is not None and 0 <= skin < 4:
+        if skin is not None and 0 <= skin < PADDLE_SKIN_COUNT:
             while len(self.skins) <= self.seat:
                 self.skins.append(0)
             self.skins[self.seat] = skin

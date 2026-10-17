@@ -67,4 +67,7 @@ broadcasts snapshots; `ClientSession` sends inputs and interpolates snapshots. M
 are versioned dataclasses (`protocol`), encoded by a `Codec` (`codec`) and sent through
 a `Transport` (`UdpTransport` or the in-memory `MemoryNetwork` with simulated loss used
 by tests). `Discovery` finds hosts by broadcast. `net` imports only `core` and `domain`;
-the screens live in `ui/lan.py`.
+the screens live in `ui/lan.py`. The lobby roster and match-start message synchronize
+paddle colors and patterns against the full appearance catalog. Ball, trail, field,
+background, and HUD styling remain local render preferences. Incompatible LAN message
+changes are reflected in `PROTOCOL_VERSION`.

@@ -1,5 +1,7 @@
 """World simulation tests (spec: game-core)."""
 
+import pytest
+
 from pongwars.domain import constants as c
 from pongwars.domain.config import MatchConfig
 from pongwars.domain.entities import Obstacle, Rect
@@ -43,6 +45,46 @@ def test_game_core_ball_bounces_off_paddle() -> None:
     assert PaddleHit(0) in events
     assert world.ball.vel.x > 0
     assert world.ball.vel.length() > c.BALL_START_SPEED
+
+
+def test_ball_physics_ordinary_hit_speedup_is_random_and_bounded() -> None:
+    world = World(MatchConfig(seed=4))
+    ball = world.ball
+    ball.vel = Vec2(c.BALL_START_SPEED, 0.0)
+    speeds = []
+
+    for _ in range(10):
+        previous_speed = ball.vel.length()
+        world._paddle_bounce(ball, 0, Vec2(1.0, 0.0))
+        speeds.append(ball.vel.length())
+        factor = ball.vel.length() / previous_speed
+        assert factor >= c.BALL_HIT_SPEEDUP_MIN
+        assert factor <= c.BALL_HIT_SPEEDUP_MAX
+
+    assert len(set(speeds)) > 1
+
+
+def test_ball_physics_ordinary_hit_speedup_is_deterministic() -> None:
+    def hit_speeds(seed: int) -> list[float]:
+        world = World(MatchConfig(seed=seed))
+        ball = world.ball
+        ball.vel = Vec2(c.BALL_START_SPEED, 0.0)
+        speeds = []
+        for _ in range(10):
+            world._paddle_bounce(ball, 0, Vec2(1.0, 0.0))
+            speeds.append(ball.vel.length())
+        return speeds
+
+    assert hit_speeds(12) == hit_speeds(12)
+
+
+def test_ball_physics_paddle_hit_speedup_respects_maximum() -> None:
+    world = World(MatchConfig(seed=2))
+    world.ball.vel = Vec2(c.BALL_MAX_SPEED, 0.0)
+
+    world._paddle_bounce(world.ball, 0, Vec2(1.0, 0.0))
+
+    assert world.ball.vel.length() == pytest.approx(c.BALL_MAX_SPEED)
 
 
 def test_game_core_paddle_edge_hit_deflects_ball() -> None:

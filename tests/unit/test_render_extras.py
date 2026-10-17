@@ -15,9 +15,11 @@ from pongwars.domain.events import BallWarped, BombDetonated, Event, LaserFired,
 from pongwars.domain.extras import Pickup, load_specs
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import FrameInputs, World
+from pongwars.render import hud as hud_module
 from pongwars.render import palette as pal
 from pongwars.render import renderer as renderer_module
 from pongwars.render.font import text_width, unsupported_chars
+from pongwars.render.hud import HUD_STYLES, HudRenderer, player_slot_layout
 from pongwars.render.renderer import BIG_TEXT, Renderer, RenderSettings
 
 
@@ -148,142 +150,192 @@ def test_blind_field_uses_current_ball_colors(style: str, expected: tuple[pal.Co
     )
 
 
-def test_shared_hud_draws_each_players_extras_under_their_score(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    pygame.init()
-    world = _world()
-    renderer = Renderer()
-    renderer._canvas = pygame.Surface((320, 180))
-    world.extras.apply("shield", 0, [])
-    world.extras.apply("slow_paddle", 1, [])
-    positions: list[tuple[str, int, int]] = []
-
-    def capture(
-        _surface: pygame.Surface, text: str, x: int, y: int, _color: tuple[int, ...], _scale: int
-    ) -> None:
-        positions.append((text, x, y))
-
-    monkeypatch.setattr(renderer_module, "draw_text", capture)
-    anchors = renderer._draw_shared_scores(world, 320)
-    renderer._draw_effects(world, anchors, None)
-
-    assert next(item[1:] for item in positions if item[0].startswith("Shield")) == anchors[0]
-    assert next(item[1:] for item in positions if item[0].startswith("Slow paddle")) == anchors[1]
-    assert anchors[0][0] != anchors[1][0]
-
-
 @pytest.mark.parametrize(
     ("arena", "players"),
-    [("classic", 2), ("trident", 3), ("crossfire", 4)],
+    [
+        ("classic", 2),
+        ("trident", 3),
+        ("crossfire", 4),
+    ],
 )
-def test_shared_hud_never_overlaps_player_extras(
-    arena: str,
-    players: int,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.parametrize("style", HUD_STYLES)
+def test_hud_layout_separates_every_player_zone(arena: str, players: int, style: str) -> None:
     pygame.init()
     world = World(MatchConfig(arena=arena, controllers=("human",) * players))
-    renderer = Renderer()
-    renderer._canvas = pygame.Surface((320, 180))
+    renderer = Renderer(RenderSettings(hud_style=style))
     for seat in range(players):
         world.extras.apply("inverted", seat, [])
+    world.extras.weapons[players - 1] = ("laser", 2)
+    world.extras.pickups.extend(
+        [
+            Pickup(Vec2(35.0, 30.0), "bomb", 100),
+            Pickup(Vec2(80.0, 45.0), "shield", 100),
+            Pickup(Vec2(125.0, 65.0), "small_paddle", 100),
+        ]
+    )
+    assert renderer.draw(world).get_size() == (320, 180)
 
-    rendered: list[tuple[str, int, int]] = []
-
-    def capture(
-        _surface: pygame.Surface, text: str, x: int, y: int, _color: tuple[int, ...], _scale: int
-    ) -> None:
-        rendered.append((text, x, y))
-
-    monkeypatch.setattr(renderer_module, "draw_text", capture)
-    anchors = renderer._draw_shared_scores(world, 320)
-    renderer._draw_effects(world, anchors, None)
-
-    effects = [
-        (text, pygame.Rect(x, y, text_width(text), 6))
-        for text, x, y in rendered
-        if text.startswith("Inverted controls")
-    ]
-    assert len(effects) == players
-    for index, (_, rect) in enumerate(effects):
-        assert all(not rect.colliderect(other) for _, other in effects[index + 1 :])
+    slots = player_slot_layout((320, 180), players)
+    assert {seat for seat, _ in slots} == set(range(players))
+    for index, (_, rect) in enumerate(slots):
+        assert rect.left >= 0 and rect.right <= 320
+        assert all(not rect.colliderect(other) for _, other in slots[index + 1 :])
 
 
-def test_split_hud_keeps_extras_under_the_affected_players_score(
+@pytest.mark.parametrize(("players", "size"), [(2, (160, 180)), (3, (160, 90)), (4, (160, 90))])
+def test_split_hud_layout_keeps_all_players_inside_each_view(
+    players: int, size: tuple[int, int]
+) -> None:
+    for own_seat in range(players):
+        slots = player_slot_layout(size, players, own_seat)
+        assert len(slots) == players
+        assert slots[0][0] == own_seat
+        for index, (_, rect) in enumerate(slots):
+            assert rect.left >= 0 and rect.top >= 0
+            assert rect.right <= size[0] and rect.bottom <= size[1]
+            assert all(not rect.colliderect(other) for _, other in slots[index + 1 :])
+
+
+def test_pickup_hud_labels_are_visible_and_do_not_overlap() -> None:
+    items = (
+        ("shield", 10.0, "Shield"),
+        ("slow_paddle", 30.0, "Slow paddle"),
+        ("small_paddle", 80.0, "Small paddle"),
+        ("inverted", 150.0, "Inverted controls"),
+    )
+    labels = [(center, label, name, text_width(label) + 10) for name, center, label in items]
+    rows = HudRenderer._pack_pickup_labels(labels, 160)
+
+    assert sum(map(len, rows)) == len(items)
+    assert len(rows) > 1
+    for row in rows:
+        for index, (x, width, _, _) in enumerate(row):
+            assert x >= 0 and x + width <= 160
+            if index:
+                previous_x, previous_width, _, _ = row[index - 1]
+                assert previous_x + previous_width < x
+
+
+def test_spanish_hud_displays_pickup_name_and_player_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pygame.init()
-    world = World(
-        MatchConfig(arena="crossfire", controllers=("human", "human", "human", "human"))
-    )
-    renderer = Renderer(RenderSettings(view="split"))
-    view = renderer.viewports(world)[0]
-    renderer._canvas = pygame.Surface(view.rect.size)
-    world.extras.apply("shield", 0, [])
-    world.extras.apply("slow_paddle", 1, [])
-    positions: list[tuple[str, int, int]] = []
-
-    def capture(
-        _surface: pygame.Surface, text: str, x: int, y: int, _color: tuple[int, ...], _scale: int
-    ) -> None:
-        positions.append((text, x, y))
-
-    monkeypatch.setattr(renderer_module, "draw_text", capture)
-    anchors = renderer._draw_split_scores(world, 0, view.rect.width)
-    renderer._draw_effects(world, anchors, view.seat)
-
-    shield_text, shield_x, shield_y = next(
-        item for item in positions if item[0].startswith("Shield")
-    )
-    slow_text, slow_x, slow_y = next(
-        item for item in positions if item[0].startswith("Slow paddle")
-    )
-    assert (shield_x, shield_y) == anchors[0]
-    assert slow_x == anchors[1][0]
-    assert slow_y >= anchors[1][1]
-    assert not pygame.Rect(shield_x, shield_y, text_width(shield_text), 6).colliderect(
-        pygame.Rect(slow_x, slow_y, text_width(slow_text), 6)
-    )
-
-
-def test_spanish_hud_draws_complete_effect_and_weapon_names(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    pygame.init()
     world = _world()
-    renderer = Renderer(RenderSettings(view="split"), translator=Translator("es"))
-    view = renderer.viewports(world)[0]
-    renderer._canvas = pygame.Surface(view.rect.size)
-    world.extras.apply("inverted", 0, [])
-    world.extras.apply("aim_assist", 0, [])
-    world.extras.weapons[0] = ("freeze", 2)
+    world.extras.apply("big_paddle", 0, [])
     world.extras.pickups.append(Pickup(Vec2(80.0, 45.0), "small_paddle", 100))
+    renderer = Renderer(RenderSettings(view="split"), translator=Translator("es"))
+    rendered: list[str] = []
+    monkeypatch.setattr(
+        hud_module,
+        "draw_text",
+        lambda _surface, text, *_args: rendered.append(text),
+    )
+    view = renderer.viewports(world)[0]
+    surface = pygame.Surface(view.rect.size)
+    renderer.hud.draw(
+        surface,
+        world,
+        renderer._camera_for(view, world),
+        renderer.translator,
+        renderer.colors,
+        "arcade",
+        own_seat=view.seat,
+    )
+
+    assert "J1 0" in rendered
+    assert "Pala grande" in rendered
+    assert "Pala pequeña" in rendered
+
+
+@pytest.mark.parametrize(("width", "own_seat"), [(320, None), (160, 0)])
+@pytest.mark.parametrize("extra_count", [0, 1, 2])
+def test_active_extra_names_fit_player_panel_for_zero_one_or_two_extras(
+    monkeypatch: pytest.MonkeyPatch, width: int, own_seat: int | None, extra_count: int
+) -> None:
+    world = World(MatchConfig(arena="classic", controllers=("human", "human")))
+    active_names = ("big_paddle", "shield")[:extra_count]
+    for name in active_names:
+        world.extras.apply(name, 0, [])
+    renderer = Renderer(translator=Translator("es"))
+    surface = pygame.Surface((width, 180))
     rendered: list[tuple[str, int, int]] = []
 
     def capture(
-        _surface: pygame.Surface, text: str, x: int, y: int, _color: tuple[int, ...], _scale: int
+        _surface: pygame.Surface,
+        text: str,
+        x: int,
+        y: int,
+        color: tuple[int, ...],
+        scale: int = 1,
     ) -> None:
-        rendered.append((text, x, y))
+        if color == pal.WHITE:
+            rendered.append((text, x, scale))
 
-    monkeypatch.setattr(renderer_module, "draw_text", capture)
-    assert view.seat is not None
-    anchors = renderer._draw_split_scores(world, view.seat, view.rect.width)
-    renderer._draw_effects(world, anchors, view.seat)
-    renderer._pickup(world, 0)
+    monkeypatch.setattr(hud_module, "draw_text", capture)
+    renderer.hud._draw_players(
+        surface, world, renderer.translator, renderer.colors, "arcade", own_seat
+    )
 
-    assert {text for text, _, _ in rendered} >= {
-        "Controles invertidos 7",
-        "Asistencia de puntería 11",
-        "Congelar X2",
-    }
-    assert all(x >= 0 and x + text_width(text) <= view.rect.width for text, x, _ in rendered)
-    effect_rows = {
-        y
-        for text, _, y in rendered
-        if text.startswith(("Controles", "Asistencia", "Congelar"))
-    }
-    assert len(effect_rows) == 3
+    slot = next(rect for seat, rect in player_slot_layout((width, 180), 2, own_seat) if seat == 0)
+    active_labels = [item for item in rendered if item[0] in ("Pala grande", "Escudo")]
+    assert len(active_labels) == extra_count
+    assert all(
+        x >= slot.left and x + text_width(text, scale) <= slot.right - 2
+        for text, x, scale in active_labels
+    ), (slot, active_labels)
+
+
+def test_pickup_labels_are_bottom_anchored_in_original_card_height(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world = _world()
+    world.extras.pickups.append(Pickup(Vec2(80.0, 45.0), "bomb", 100))
+    renderer = Renderer()
+    camera = renderer._camera_for(renderer.viewports(world)[0], world)
+    surface = pygame.Surface((320, 180))
+    rendered: list[tuple[str, int, int]] = []
+    monkeypatch.setattr(
+        hud_module,
+        "draw_text",
+        lambda _surface, text, _x, y, _color, scale=1: rendered.append((text, y, scale)),
+    )
+
+    labels_top = renderer.hud._draw_pickup_labels(
+        surface, world, camera, renderer.translator, "arcade"
+    )
+
+    assert labels_top == surface.get_height() - 2 - hud_module.HUD_PICKUP_HEIGHT
+    name = next(item for item in rendered if item[0] == "Bomb")
+    assert name[1] == labels_top + (hud_module.HUD_PICKUP_HEIGHT - 1 - 5) // 2
+    assert name[2] == 1
+
+
+def test_timed_clock_stays_above_bottom_anchored_pickup_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world = World(
+        MatchConfig(
+            mode="timed",
+            options=(("duration_seconds", 60),),
+            seed=3,
+        )
+    )
+    world.extras.pickups.append(Pickup(Vec2(80.0, 45.0), "bomb", 100))
+    renderer = Renderer()
+    view = renderer.viewports(world)[0]
+    renderer._canvas = pygame.Surface(view.rect.size)
+    renderer.camera = renderer._camera_for(view, world)
+    rendered: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        renderer_module,
+        "draw_text",
+        lambda _surface, text, _x, y, _color, _scale=1: rendered.append((text, y)),
+    )
+
+    renderer._draw_hud(world, view)
+
+    clock_y = next(y for text, y in rendered if text == "01:00")
+    pickup_labels_top = view.rect.height - 2 - hud_module.HUD_PICKUP_HEIGHT
+    assert clock_y + 5 < pickup_labels_top
 
 
 def test_extra_name_catalogs_cover_every_effect_and_fit_split_hud() -> None:
@@ -318,9 +370,7 @@ def test_countdown_is_drawn_below_the_projected_arena(
             world
             if arena == "classic"
             else World(
-                MatchConfig(
-                    arena="crossfire", controllers=("human", "human", "human", "human")
-                )
+                MatchConfig(arena="crossfire", controllers=("human", "human", "human", "human"))
             )
         )
         renderer = Renderer(settings)

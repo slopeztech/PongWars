@@ -19,12 +19,98 @@ MAX_VOLUME = 100
 MIN_SCALE = 2
 MAX_SCALE = 8
 VIEW_MODES = ("shared", "split")
-BACKGROUNDS = ("none", "grid", "stars", "rain", "waves", "aurora")
-BALL_STYLES = ("classic", "pixel", "energy", "ring")
-TRAIL_STYLES = ("classic", "pixel", "neon")
-FIELD_STYLES = ("grid", "checker", "neon", "solid")
-PADDLE_COLOR_COUNT = 8
-PADDLE_SKIN_COUNT = 4
+BACKGROUNDS = (
+    "none",
+    "grid",
+    "stars",
+    "rain",
+    "waves",
+    "aurora",
+    "nebula",
+    "comets",
+    "bubbles",
+    "snow",
+    "fireflies",
+    "matrix",
+    "circuit",
+    "embers",
+    "meteor",
+    "spiral",
+    "confetti",
+    "starscape",
+    "plasma",
+    "rainbow",
+    "gears",
+    "pulse",
+)
+BALL_STYLES = (
+    "classic",
+    "pixel",
+    "energy",
+    "ring",
+    "star",
+    "crystal",
+    "sun",
+    "target",
+    "moon",
+    "flower",
+    "dice",
+    "eye",
+    "atom",
+    "gear",
+    "prism",
+    "comet",
+    "bubble",
+    "spiral",
+    "cross",
+    "heart",
+)
+TRAIL_STYLES = (
+    "classic",
+    "pixel",
+    "neon",
+    "comet",
+    "dotted",
+    "rainbow",
+    "flame",
+    "frost",
+    "spark",
+    "squares",
+    "rings",
+    "double",
+    "dash",
+    "ripple",
+    "stars",
+    "ribbon",
+    "glitch",
+    "orbit",
+    "fade",
+)
+FIELD_STYLES = (
+    "grid",
+    "checker",
+    "neon",
+    "solid",
+    "dots",
+    "diagonal",
+    "crosshatch",
+    "rings",
+    "target",
+    "stripes",
+    "waves",
+    "diamonds",
+    "circuit",
+    "boxes",
+    "radial",
+    "stars",
+    "lanes",
+    "scanlines",
+    "maze",
+    "sparkle",
+)
+HUD_STYLES = ("arcade", "minimal", "neon", "cabinet", "scoreboard", "pixel")
+PADDLE_COLOR_COUNT = 24
+PADDLE_SKIN_COUNT = 20
 SEATS = 4
 
 
@@ -75,6 +161,7 @@ class Settings:
     ball_style: str = "classic"
     trail_style: str = "classic"
     field_style: str = "grid"
+    hud_style: str = "arcade"
     player_name: str = "PLAYER"
     last_host: str = ""
     last_match: dict[str, Any] = field(default_factory=dict)
@@ -98,6 +185,8 @@ class Settings:
             self.trail_style = "classic"
         if self.field_style not in FIELD_STYLES:
             self.field_style = "grid"
+        if self.hud_style not in HUD_STYLES:
+            self.hud_style = "arcade"
         self.paddle_colors = _fit_seats(self.paddle_colors, [0, 1, 2, 3], PADDLE_COLOR_COUNT)
         self.paddle_skins = _fit_seats(self.paddle_skins, [0, 0, 0, 0], PADDLE_SKIN_COUNT)
 

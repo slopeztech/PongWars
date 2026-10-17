@@ -590,7 +590,7 @@ class World:
             if paddle is self.paddles[index] and paddle.headbutt_ticks > 0
             else c.SPIN_SPEED_FACTOR
             if spin
-            else c.BALL_HIT_SPEEDUP
+            else self.rng.uniform(c.BALL_HIT_SPEEDUP_MIN, c.BALL_HIT_SPEEDUP_MAX)
         )
         speed = min(ball.vel.length() * speed_factor, c.BALL_MAX_SPEED)
         if paddle.axis == "y":

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import Enum
 
+from pongwars.core.settings import PADDLE_COLOR_COUNT, PADDLE_SKIN_COUNT
 from pongwars.domain.config import MatchConfig
 from pongwars.domain.events import Event
 from pongwars.domain.world import FrameInputs, World
@@ -90,7 +91,9 @@ def clean_room_name(raw: object) -> str:
 def _fit_cosmetics(values: list[int] | tuple[int, ...] | None, count: int, limit: int) -> list[int]:
     fitted = list(values or ())[:count]
     return [
-        value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < limit else 0
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < limit
+        else 0
         for value in fitted
     ] + [0] * (count - len(fitted))
 
@@ -135,8 +138,8 @@ class HostSession:
         self.state = HostState.LOBBY
         self.world: World | None = None
         self.remotes: dict[int, RemotePlayer] = {}
-        self.colors = _fit_cosmetics(colors, len(config.controllers), 8)
-        self.skins = _fit_cosmetics(skins, len(config.controllers), 4)
+        self.colors = _fit_cosmetics(colors, len(config.controllers), PADDLE_COLOR_COUNT)
+        self.skins = _fit_cosmetics(skins, len(config.controllers), PADDLE_SKIN_COUNT)
         self.dropped: list[int] = []
         self.ai_seats: set[int] = set()
         self._seq = 0
@@ -207,11 +210,22 @@ class HostSession:
         return Roster(self.names(), self.colors.copy(), self.skins.copy())
 
     def set_cosmetics(self, seat: int, color: int | None = None, skin: int | None = None) -> None:
+        """Update one seat's cosmetics if the supplied indices are valid."""
         if not 0 <= seat < len(self.colors):
             return
-        if color is not None and isinstance(color, int) and not isinstance(color, bool) and 0 <= color < 8:
+        if (
+            color is not None
+            and isinstance(color, int)
+            and not isinstance(color, bool)
+            and 0 <= color < PADDLE_COLOR_COUNT
+        ):
             self.colors[seat] = color
-        if skin is not None and isinstance(skin, int) and not isinstance(skin, bool) and 0 <= skin < 4:
+        if (
+            skin is not None
+            and isinstance(skin, int)
+            and not isinstance(skin, bool)
+            and 0 <= skin < PADDLE_SKIN_COUNT
+        ):
             self.skins[seat] = skin
         self._broadcast_remotes(self._roster())
 

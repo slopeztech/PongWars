@@ -65,3 +65,16 @@ workflow's version-bump commit and tag push.
 
 To add content, see the instructions near the end of the
 [player guide](user-guide.md#adding-content).
+
+## Documentation is part of the change
+
+Every new feature and every change to existing behavior must update the relevant
+documentation in the same change. Explain the behavior in the appropriate guide,
+update summaries that would otherwise become inaccurate, and add or repair links
+from the README and related guides. For content catalogs, document each built-in
+item and its meaningful behavior rather than only its internal identifier.
+
+Keep the README as an overview and link to focused guides for detailed catalogs:
+[game modes](game-modes.md), [arenas](arenas.md), and [extras](extras.md).
+Documentation should describe the shipped behavior, not implementation details
+that players cannot observe.

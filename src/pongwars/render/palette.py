@@ -27,7 +27,32 @@ UI_MUTED: Color = (54, 73, 123)
 UI_DARK: Color = (20, 34, 69)
 
 PLAYER_COLORS: tuple[Color, ...] = (BLUE, RED, LIME, YELLOW)
-PADDLE_PALETTE: tuple[Color, ...] = (BLUE, RED, LIME, YELLOW, ORANGE, PINK, WHITE, LAVENDER)
+PADDLE_PALETTE: tuple[Color, ...] = (
+    BLUE,
+    RED,
+    LIME,
+    YELLOW,
+    ORANGE,
+    PINK,
+    WHITE,
+    LAVENDER,
+    (0, 255, 255),
+    (0, 160, 150),
+    (108, 255, 190),
+    (0, 100, 60),
+    (100, 220, 255),
+    (40, 90, 220),
+    (75, 55, 170),
+    (190, 120, 255),
+    (255, 0, 190),
+    (255, 110, 90),
+    (190, 25, 55),
+    (110, 30, 60),
+    (255, 205, 60),
+    (220, 180, 130),
+    (160, 180, 195),
+    (55, 65, 85),
+)
 THEMES: dict[str, tuple[Color, Color, Color]] = {
     "stone": (NAVY, DARK_GREY, LIGHT_GREY),
     "default": (NAVY, DARK_GREY, LIGHT_GREY),

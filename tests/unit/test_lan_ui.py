@@ -13,12 +13,12 @@ from pongwars.core.i18n import Translator
 from pongwars.core.settings import Settings
 from pongwars.domain.config import MatchConfig
 from pongwars.domain.world import Phase
-from pongwars.net.transport import MemoryNetwork, local_ip
 from pongwars.net.client import ClientState
+from pongwars.net.transport import MemoryNetwork, local_ip
 from pongwars.ui.core import AppContext
 from pongwars.ui.lan import (
-    LanClientMatchScreen,
     LanClientLobbyScreen,
+    LanClientMatchScreen,
     LanDropScreen,
     LanHelpScreen,
     LanHostMatchScreen,
@@ -141,6 +141,7 @@ def spin(net: MemoryNetwork, *screens: Any, n: int = 6) -> None:
 
 
 def test_lobby_join_and_match_flow(ctx: AppContext) -> None:
+    ctx.settings.hud_style = "scoreboard"
     net, lobby, join = full_session(ctx)
     spin(net, join, lobby)
     assert [h.name for h in join.hosts]
@@ -155,11 +156,10 @@ def test_lobby_join_and_match_flow(ctx: AppContext) -> None:
     assert lobby.host is not None and "BOB" in lobby.host.names()
     client_lobby = ctx.stack.top
     assert isinstance(client_lobby, LanClientLobbyScreen)
-    client_lobby._adjust_color(1)
-    client_lobby._adjust_skin(1)
+    client_lobby.client.set_cosmetics(color=23, skin=19)
     spin(net, client_lobby, lobby)
-    assert lobby.host.colors[1] == client_lobby.client.colors[1]
-    assert lobby.host.skins[1] == client_lobby.client.skins[1]
+    assert lobby.host.colors[1] == client_lobby.client.colors[1] == 23
+    assert lobby.host.skins[1] == client_lobby.client.skins[1] == 19
     lobby.start()
     host_screen = ctx.stack.top
     assert isinstance(host_screen, LanHostMatchScreen)
@@ -172,6 +172,8 @@ def test_lobby_join_and_match_flow(ctx: AppContext) -> None:
         break
     client_screen = ctx.stack.top
     assert isinstance(client_screen, LanClientMatchScreen)
+    assert host_screen.renderer.settings.hud_style == "scoreboard"
+    assert client_screen.renderer.settings.hud_style == "scoreboard"
     for _ in range(60):
         net.advance(1)
         host_screen.update(0.05)

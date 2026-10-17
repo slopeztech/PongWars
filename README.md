@@ -5,86 +5,24 @@ challenge the AI, or face your friends over a local network.
 
 ## Game modes
 
-Choose a mode, arena, players, and optional extras before each match.
-
-| Mode | How to win |
-|------|------------|
-| **Classic** | Be the first to reach the points target. You can enable **Win by two** to require a two-point lead. |
-| **Timed** | Score as many points as possible before time runs out. A tie starts sudden death; the next point wins. |
-| **Survival** | Each goal you concede costs a life. Eliminate every opponent to be the last player standing. |
-| **King of the Table** | Hold the ball in the center zone to score for the last player who touched it. Goals do not score; reach the points target to win. |
+Choose a mode, arena, players, and optional extras before each match. Each mode
+has its own scoring and end conditions; see the [game modes guide](docs/game-modes.md)
+for detailed rules and configurable options.
 
 The target score, time limit, and number of lives can be adjusted in match setup.
 
 ## Arenas
 
-There are thirteen arenas. All except **Trident** (three players) and **Crossfire**
-(four players) are for two players.
-
-| Arena | What to expect |
-|-------|----------------|
-| **Classic** | An open court with no obstacles. |
-| **Pillars** | A pair of solid pillars blocks the center lanes. |
-| **Bumpers** | Two bumpers send the ball bouncing back into play. |
-| **Moving Walls** | A solid wall moves across the court, changing the available routes. |
-| **Fortress** | A destructible central barrier can be broken by repeated hits. |
-| **Monolith** | A fixed solid barrier splits the middle of the court. |
-| **Orbital** | Two orbiting bumpers move around the court and deflect the ball. |
-| **Pinball** | Two bumpers create a pinball-style court. |
-| **Portal** | A pair of portals moves the ball to a new position while preserving its trajectory and speed. Both portals relocate after every crossing. |
-| **Arkanoid** | A centered cluster of 2–16 random blocks appears each round. Every ball hit removes a block; lasers and missiles can clear them too. |
-| **Gravity** | A sunken center attracts the ball more strongly the closer it passes, bending its trajectory. The ball serves from the outer part of the court with extra speed. |
-| **Trident** | A three-player court with a central solid obstacle. |
-| **Crossfire** | A four-player court with a central solid obstacle. |
+Thirteen arenas offer open courts, moving obstacles, bumpers, destructible
+blocks, portals, and gravity. **Trident** is for three players and **Crossfire**
+for four; see the [arena guide](docs/arenas.md) for every layout and its
+collision behavior.
 
 ## Pickups and extras
 
-Extras are optional. Set them to **Off**, **All**, or enable only powers, weapons, or
-penalties. Pickups appear on the court and are collected by the ball.
-
-### Powers
-
-| Power | Effect |
-|-------|--------|
-| **Big paddle** | Temporarily enlarges your paddle. |
-| **Speed boost** | Temporarily makes your paddle move faster. |
-| **Magnet** | Lets your paddle catch the ball; fire your weapon or wait for the effect to release it. |
-| **Shield** | Bounces back the next ball that would score against you. |
-| **Multiball** | Splits the ball into several balls. |
-| **Slow motion** | Temporarily slows your opponents' paddles. |
-| **Aim assist** | A paddle hit aims the ball toward the next opponent. |
-| **Cleanse** | Removes your penalties and disabling effects. |
-| **Slow ball** | Slows all balls down. |
-| **Companion** | Adds a temporary AI paddle to help defend your goal. |
-
-### Weapons
-
-Collect a weapon, then press your **Use weapon** key to fire it.
-
-| Weapon | Effect |
-|--------|--------|
-| **Laser** | Fires across the court, stunning the first opponent hit or damaging a destructible obstacle. |
-| **Freeze** | Temporarily stops an opponent's paddle from moving. |
-| **Bomb** | Blasts nearby balls away from your paddle. |
-| **Cat** | Releases a cat that chases the ball and scrambles its direction and speed. |
-| **Hex** | Curses an opponent with a random penalty. |
-| **Warp** | Teleports every moving ball to a random spot without changing its velocity. |
-| **Headbutt** | Briefly lunges your paddle forward to extend its reach. |
-| **Missiles** | Fires guided missiles at opponents; missiles can also damage destructible obstacles. |
-
-### Penalties
-
-| Penalty | Effect |
-|---------|--------|
-| **Small paddle** | Temporarily shrinks your paddle. |
-| **Inverted controls** | Reverses your paddle controls. |
-| **Slow paddle** | Temporarily reduces your paddle's movement speed. |
-| **Blind** | Obscures your view of the court. |
-| **Ramp** | Tilts the court toward the penalized player, speeding the ball downhill and slowing it uphill. Only appears in 1-vs-1 arenas. |
-| **Invader** | A slow-moving alien appears across the court and launches up to five slow bombs at the penalized player. |
-| **Turbo ball** | Speeds all balls up. |
-| **Dizzy controls** | Makes your paddle sway on its own. |
-| **Weapon jam** | Prevents you from firing your weapon. |
+Extras are optional. Set them to **Off**, **All**, or enable only powers, weapons,
+or penalties. See the [extras guide](docs/extras.md) for every pickup, duration,
+weapon ammunition, and collection rules.
 
 ## Players and match setup
 
@@ -99,11 +37,12 @@ configure open seats; unfilled seats are controlled by AI. See the
 
 ## Appearance and sound
 
-Choose paddle colors and styles, ball designs, ball trails, and arena-field styles.
-Select an animated background or turn it off. **Settings** is split into Graphics,
-Sound, Gameplay, and Controls. Graphics lets you choose fullscreen, window size, and
-which monitor to use; the selected monitor is also used in fullscreen. Preferences are
-saved automatically. The original soundtrack plays in menus and matches.
+Choose from 24 paddle colors, 20 paddle patterns, 20 ball designs, 19 ball trails,
+20 arena-field styles, and 22 background choices. See the full [appearance guide](docs/appearance.md).
+**Settings** is split into Graphics, Sound, Gameplay, and Controls. Graphics lets you
+choose fullscreen, window size, and which monitor to use; the selected monitor is
+also used in fullscreen. Preferences are saved automatically. The original soundtrack
+plays in menus and matches.
 
 ### Controls
 
@@ -132,6 +71,8 @@ For more gameplay details and LAN instructions, see the [player guide](docs/user
   or interactive Python console.
 - [Development and contribution](docs/development.md) — set up tools, run checks, and
   build installers.
+- [Appearance guide](docs/appearance.md) — catalogs the available paddle, ball,
+  trail, field, and background customizations.
 
 ## License
 

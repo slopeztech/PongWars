@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from pongwars.core.settings import PADDLE_COLOR_COUNT, PADDLE_SKIN_COUNT
 from pongwars.domain.config import MatchConfig
 from pongwars.domain.events import Goal, PaddleHit
 from pongwars.domain.world import Phase, World
@@ -22,6 +23,7 @@ from pongwars.net.protocol import (
     Input,
     Ping,
     ProtocolError,
+    Roster,
     Snapshot,
     from_dict,
     to_dict,
@@ -293,15 +295,51 @@ def test_lobby_cosmetics_sync_into_started_match() -> None:
     clock, net, host, client = make_pair()
     pump(clock, net, host, client, 10)
     assert client.state is ClientState.LOBBY
-    client.set_cosmetics(color=5, skin=2)
+    color = PADDLE_COLOR_COUNT - 1
+    skin = PADDLE_SKIN_COUNT - 1
+    client.set_cosmetics(color=color, skin=skin)
     pump(clock, net, host, client)
-    assert host.colors[1] == 5
-    assert host.skins[1] == 2
+    assert host.colors[1] == color
+    assert host.skins[1] == skin
     host.start()
     client.poll()
     assert client.state is ClientState.PLAYING
     assert client.colors == host.colors
     assert client.skins == host.skins
+
+
+def test_client_accepts_expanded_cosmetics_from_roster() -> None:
+    clock, _, _, client = make_pair()
+    client._handle(
+        Roster(
+            ["HOST", "GUEST"],
+            [PADDLE_COLOR_COUNT - 1, PADDLE_COLOR_COUNT - 1],
+            [PADDLE_SKIN_COUNT - 1, PADDLE_SKIN_COUNT - 1],
+        ),
+        clock.now,
+    )
+
+    assert client.colors == [PADDLE_COLOR_COUNT - 1] * 2
+    assert client.skins == [PADDLE_SKIN_COUNT - 1] * 2
+
+
+def test_host_accepts_expanded_paddle_cosmetics() -> None:
+    clock = Clock()
+    network = MemoryNetwork()
+    host = HostSession(
+        MatchConfig(controllers=("human", "remote")),
+        "host",
+        network.endpoint("10.0.0.1", PORT),
+        clock,
+        colors=[PADDLE_COLOR_COUNT - 1, 0],
+        skins=[PADDLE_SKIN_COUNT - 1, 0],
+    )
+
+    assert host.colors[0] == PADDLE_COLOR_COUNT - 1
+    assert host.skins[0] == PADDLE_SKIN_COUNT - 1
+    host.set_cosmetics(1, color=PADDLE_COLOR_COUNT - 1, skin=PADDLE_SKIN_COUNT - 1)
+    assert host.colors[1] == PADDLE_COLOR_COUNT - 1
+    assert host.skins[1] == PADDLE_SKIN_COUNT - 1
 
 
 def test_garbage_and_stale_snapshots_are_ignored() -> None:

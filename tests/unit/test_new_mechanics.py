@@ -85,7 +85,7 @@ def test_ball_hit_without_spin_key_does_not_apply_spin() -> None:
 
 def test_score_gap_spawns_paddle_targeted_pickups_with_reduced_duration() -> None:
     world = make_world()
-    world.scores[:] = [0, 3]
+    world.scores[:] = [0, 2]
     world.extras._spawn_timer = 10_000
     world.extras._comeback_timer = 1
     world.extras.update_pickups([])
@@ -120,9 +120,27 @@ def test_score_gap_spawns_paddle_targeted_pickups_with_reduced_duration() -> Non
     assert world.extras.active[1][0].spec.magnitude == pytest.approx(0.8)
 
 
+def test_comeback_pickups_start_at_two_point_score_gap() -> None:
+    world = make_world()
+    world.scores[:] = [0, 1]
+    world.extras._spawn_timer = 10_000
+    world.extras._comeback_timer = 1
+
+    world.extras.update_pickups([])
+
+    assert world.extras.pickups == []
+
+    world.scores[:] = [0, 2]
+    world.extras._comeback_timer = 1
+    world.extras.update_pickups([])
+
+    assert len(world.extras.pickups) == 1
+    assert world.extras.pickups[0].target == 0
+
+
 def test_comeback_pickups_alternate_and_remain_spaced() -> None:
     world = make_world()
-    world.scores[:] = [0, 3]
+    world.scores[:] = [0, 2]
     world.extras._spawn_timer = 10_000
     world.extras._comeback_timer = 1
 

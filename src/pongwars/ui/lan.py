@@ -86,6 +86,7 @@ def _render_settings(
         ball_style=s.ball_style,
         trail_style=s.trail_style,
         field_style=s.field_style,
+        hud_style=s.hud_style,
         paddle_colors=tuple(s.paddle_colors if colors is None else colors),
         paddle_skins=tuple(s.paddle_skins if skins is None else skins),
     )
@@ -167,22 +168,23 @@ class LanLobbyScreen(MenuScreen):
         if self.host is None:
             self.menu.set_items([])
             return
+        host = self.host
         self.menu.set_items(
             [
                 MenuItem(
                     lambda: t("appearance.color", number=1),
-                    lambda: t(f"color.{self.host.colors[0]}"),
+                    lambda: t(f"color.{host.colors[0]}"),
                     on_adjust=lambda step: self._adjust_cosmetics(0, step),
                 ),
                 MenuItem(
                     lambda: t("appearance.skin", number=1),
-                    lambda: t(f"skin.{self.host.skins[0]}"),
+                    lambda: t(f"skin.{host.skins[0]}"),
                     on_adjust=lambda step: self._adjust_cosmetics(1, step),
                 ),
                 MenuItem(
                     lambda: t("lan.lobby.start"),
                     on_activate=self.start,
-                    enabled=not self.host.open_seats,
+                    enabled=not host.open_seats,
                 ),
             ]
         )
@@ -451,6 +453,7 @@ class LanJoinScreen(MenuScreen):
             self.status = t("lan.join.timeout")
             self.client = None
             self.rebuild()
+
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Draw the host list, fields and status.
         @param surface Low-resolution target.
