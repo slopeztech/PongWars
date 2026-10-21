@@ -5,7 +5,7 @@
 from dataclasses import dataclass, field, fields
 from typing import Any
 
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 6
 DEFAULT_PORT = 47474
 MAX_NAME = 10
 REASON_VERSION = "VersionMismatch"

@@ -7,13 +7,23 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
 from pongwars.domain import constants as c
-from pongwars.domain.entities import Ball, Cat, Companion, Invader, Missile, Paddle, Rect
+from pongwars.domain.entities import (
+    Ball,
+    Cat,
+    Companion,
+    Invader,
+    Missile,
+    Paddle,
+    Rect,
+    Stalker,
+)
 from pongwars.domain.events import (
     BallWarped,
     BombDetonated,
     CatReleased,
     Event,
     LaserFired,
+    LeviathanRoared,
 )
 from pongwars.domain.extras.base import EFFECTS, Effect, Mods
 from pongwars.domain.vec import Vec2
@@ -114,7 +124,7 @@ class Multiball(Effect):
     lasting = False
 
     def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
-        """@brief Add two clones of the main ball, diverging from it.
+        """@brief Grow the ball count to a random total of two to four.
         @param world Match being played.
         @param player Collector (credited as the clones' last toucher).
         @param events Unused.
@@ -124,10 +134,12 @@ class Multiball(Effect):
         if speed == 0.0 or main.held_by is not None:
             return
         base = math.atan2(main.vel.y, main.vel.x)
-        for sign in (-1.0, 1.0):
-            if len(world.balls) >= c.MAX_BALLS:
-                return
-            vel = Vec2.from_angle(base + sign * c.MULTIBALL_SPREAD, speed)
+        target_count = world.rng.randint(2, c.MAX_BALLS)
+        clone_count = min(target_count - len(world.balls), c.MAX_BALLS - len(world.balls))
+        for clone_index in range(clone_count):
+            sign = -1.0 if clone_index % 2 == 0 else 1.0
+            angle = base + sign * c.MULTIBALL_SPREAD * (clone_index // 2 + 1)
+            vel = Vec2.from_angle(angle, speed)
             world.extra_balls.append(Ball(main.pos, vel, main.radius, toucher=player))
 
 
@@ -218,6 +230,52 @@ class Invasor(Effect):
         ]
 
 
+@_register("stalker", "penalty")
+class StalkerPenalty(Effect):
+    """@brief Sends a slow pixel creature after the penalized player's paddle."""
+
+    def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Spawn or refresh the pursuing creature."""
+        paddle = world.paddles[player]
+        for stalker in world.extras.stalkers:
+            if stalker.target == player:
+                stalker.ttl = self.spec.ticks
+                return
+        if paddle.axis == "y":
+            x = c.FIELD_WIDTH * (0.7 if paddle.rect.cx < c.FIELD_WIDTH / 2 else 0.3)
+            pos = Vec2(x, paddle.rect.cy)
+        else:
+            y = c.FIELD_HEIGHT * (0.7 if paddle.rect.cy < c.FIELD_HEIGHT / 2 else 0.3)
+            pos = Vec2(paddle.rect.cx, y)
+        world.extras.stalkers.append(Stalker(pos, player, self.spec.ticks))
+
+    def on_expire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Remove the creature when the penalty ends."""
+        world.extras.stalkers = [
+            stalker for stalker in world.extras.stalkers if stalker.target != player
+        ]
+
+
+@_register("chomper", "power")
+class ChomperPower(Effect):
+    """@brief Sends a temporary hungry orb after a ball and releases it elsewhere."""
+
+    lasting = False
+
+    def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Spawn an orb that chases one free ball."""
+        world.extras.spawn_chomper(player)
+
+
+@_register("leviathan", "penalty")
+class LeviathanPenalty(Effect):
+    """@brief A giant abyssal creature lifts the arena into an underside view."""
+
+    def on_apply(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Signal the leviathan's appearance."""
+        events.append(LeviathanRoared())
+
+
 @_register("stun", "status")
 class Stun(Effect):
     """@brief The paddle cannot move (laser hit)."""
@@ -302,6 +360,8 @@ class Bomb(Effect):
         """
         centre = Vec2(world.paddles[player].rect.cx, world.paddles[player].rect.cy)
         for ball in world.balls:
+            if ball.swallowed:
+                continue
             delta = ball.pos - centre
             dist = delta.length()
             if dist >= c.BOMB_RADIUS:
@@ -320,7 +380,7 @@ class Bomb(Effect):
 
 def _scale_balls(world: "World", factor: float) -> None:
     for ball in world.balls:
-        if ball.held_by is not None:
+        if ball.held_by is not None or ball.swallowed:
             continue
         speed = ball.vel.length()
         if speed > 0.0:
@@ -462,7 +522,7 @@ class Warp(Effect):
         @param events Event list to append to.
         """
         for ball in world.balls:
-            if ball.held_by is not None:
+            if ball.held_by is not None or ball.swallowed:
                 continue
             x = world.rng.uniform(c.WARP_MARGIN, c.FIELD_WIDTH - c.WARP_MARGIN)
             y = world.rng.uniform(c.WARP_MARGIN, c.FIELD_HEIGHT - c.WARP_MARGIN)
@@ -517,6 +577,17 @@ class Headbutt(Effect):
         @param events Unused.
         """
         world.start_headbutt(player)
+
+
+@_register("build", "weapon")
+class Build(Effect):
+    """@brief Builds a one-hit defensive block in front of the owner's paddle."""
+
+    lasting = False
+
+    def fire(self, world: "World", player: int, events: list[Event]) -> None:
+        """@brief Place a defensive block on the owner's side of the court."""
+        world.build_block(player)
 
 
 @_register("missile", "weapon")

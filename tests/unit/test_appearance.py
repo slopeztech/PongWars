@@ -28,7 +28,11 @@ from pongwars.domain.entities import Cat
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import FrameInputs, World
 from pongwars.render import palette as pal
-from pongwars.render.backgrounds import draw_background
+from pongwars.render.backgrounds import (
+    SPECTATOR_COLORS,
+    SPECTATOR_HAIR_COLORS,
+    draw_background,
+)
 from pongwars.render.font import draw_text, text_width, unsupported_chars
 from pongwars.render.renderer import Renderer, RenderSettings
 from pongwars.ui import screens as screens_module
@@ -108,6 +112,79 @@ def test_aurora_curtains_span_the_screen_height() -> None:
     assert changed_rows[-1] - changed_rows[0] >= surface.get_height() * 0.75
 
 
+def test_stadium_crowd_animates_with_different_spectators() -> None:
+    surface = pygame.Surface((320, 180))
+    first_frame = pygame.Surface(surface.get_size())
+    second_frame = pygame.Surface(surface.get_size())
+
+    draw_background(first_frame, "stadium", 10, 4)
+    draw_background(second_frame, "stadium", 11, 4)
+
+    assert pygame.image.tobytes(first_frame, "RGB") != pygame.image.tobytes(second_frame, "RGB")
+
+
+def test_stadium_bottom_row_stays_visible_while_spectators_move() -> None:
+    surface = pygame.Surface((320, 180))
+    spectator_colors = {pal.shade(color, 0.42) for color in SPECTATOR_COLORS}
+    spectator_colors.add(pal.shade(pal.PEACH, 0.62))
+    spectator_colors.update(SPECTATOR_HAIR_COLORS)
+
+    for tick in range(0, 120, 5):
+        draw_background(surface, "stadium", tick, 4)
+        visible_pixels = sum(
+            surface.get_at((x, y))[:3] in spectator_colors
+            for x in range(surface.get_width())
+            for y in range(150, surface.get_height())
+        )
+        assert visible_pixels >= 3000
+
+
+def test_stadium_fills_the_background_with_spectators_and_paddle_flags() -> None:
+    surface = pygame.Surface((320, 180))
+    draw_background(surface, "stadium", 37, 4)
+    width, height = surface.get_size()
+
+    assert any(
+        surface.get_at((x, y))[:3] in pal.PADDLE_PALETTE
+        for x in range(width)
+        for y in range(height)
+    )
+    spectator_colors = {pal.shade(color, 0.42) for color in SPECTATOR_COLORS}
+    spectator_colors.add(pal.shade(pal.PEACH, 0.62))
+    spectator_colors.update(SPECTATOR_HAIR_COLORS)
+    assert (
+        sum(
+            surface.get_at((x, y))[:3] in spectator_colors
+            for x in range(width)
+            for y in range(height)
+        )
+        >= 12000
+    )
+    assert (
+        sum(
+            surface.get_at((x, y))[:3] in spectator_colors
+            for x in range(width)
+            for y in range(round(height * 0.9), height)
+        )
+        >= 300
+    )
+    flag_colors = {
+        surface.get_at((x, y))[:3]
+        for x in range(width)
+        for y in range(height)
+        if surface.get_at((x, y))[:3] in pal.PADDLE_PALETTE
+    }
+    assert len(flag_colors) >= 2
+    assert (
+        sum(
+            surface.get_at((x, y))[:3] in spectator_colors
+            for x in range(width)
+            for y in range(round(height * 0.77), round(height * 0.82))
+        )
+        < 100
+    )
+
+
 @pytest.mark.parametrize("skin", [0, 1, 2, 3])
 def test_skins_and_cat_render(skin: int) -> None:
     pygame.init()
@@ -149,7 +226,7 @@ def test_ramp_animation_and_sound_are_connected(monkeypatch: pytest.MonkeyPatch)
 def test_settings_sanitise_appearance() -> None:
     assert PADDLE_COLOR_COUNT == len(pal.PADDLE_PALETTE) == 24
     assert PADDLE_SKIN_COUNT == 20
-    assert len(BACKGROUNDS) == 22
+    assert len(BACKGROUNDS) == 23
     assert (len(BALL_STYLES), len(TRAIL_STYLES), len(FIELD_STYLES)) == (20, 19, 20)
     s = Settings.from_dict(
         {
@@ -280,6 +357,104 @@ def test_target_field_icon_has_distinctive_crosshair(ctx: AppContext) -> None:
     icon = surface.subsurface(pygame.Rect(*screens_module.STYLE_PREVIEW_BOX))
     assert any(icon.get_at((x, 22))[:3] == pal.PINK for x in range(icon.get_width()))
     assert any(icon.get_at((30, y))[:3] == pal.PINK for y in range(icon.get_height()))
+
+
+def test_target_field_pattern_draws_crosshair_over_rings(monkeypatch: pytest.MonkeyPatch) -> None:
+    renderer = Renderer()
+    paths: list[list[tuple[int, int]]] = []
+    draw_lines = pygame.draw.lines
+
+    def capture_lines(
+        surface: pygame.Surface,
+        color: tuple[int, int, int],
+        closed: bool,
+        points: list[tuple[int, int]],
+        width: int = 1,
+    ) -> pygame.Rect:
+        if color == pal.PINK and len(points) == 2:
+            paths.append(points)
+        return draw_lines(surface, color, closed, points, width)
+
+    monkeypatch.setattr(pygame.draw, "lines", capture_lines)
+
+    renderer._draw_field_pattern("target")
+
+    expected_paths = {
+        tuple(
+            (round(point.sx), round(point.sy))
+            for point in (
+                renderer.camera.project(c.FIELD_WIDTH / 2, 0, 0),
+                renderer.camera.project(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT, 0),
+            )
+        ),
+        tuple(
+            (round(point.sx), round(point.sy))
+            for point in (
+                renderer.camera.project(0, c.FIELD_HEIGHT / 2, 0),
+                renderer.camera.project(c.FIELD_WIDTH, c.FIELD_HEIGHT / 2, 0),
+            )
+        ),
+    }
+    assert {tuple(path) for path in paths} == expected_paths
+
+
+@pytest.mark.parametrize(
+    ("style", "expected_paths", "expected_colors"),
+    [
+        ("boxes", 2, (pal.shade(pal.BLUE, 0.48), pal.PINK)),
+        ("maze", 3, (pal.LAVENDER,)),
+        ("circuit", 4, (pal.shade(pal.UI_CYAN, 0.48),)),
+    ],
+)
+def test_field_patterns_match_their_design(
+    monkeypatch: pytest.MonkeyPatch,
+    style: str,
+    expected_paths: int,
+    expected_colors: tuple[tuple[int, int, int], ...],
+) -> None:
+    renderer = Renderer()
+    paths: list[list[tuple[int, int]]] = []
+    draw_lines = pygame.draw.lines
+
+    def capture_lines(
+        surface: pygame.Surface,
+        color: tuple[int, int, int],
+        closed: bool,
+        points: list[tuple[int, int]],
+        width: int = 1,
+    ) -> pygame.Rect:
+        if color in expected_colors and len(points) >= 4:
+            paths.append(points)
+        return draw_lines(surface, color, closed, points, width)
+
+    monkeypatch.setattr(pygame.draw, "lines", capture_lines)
+
+    renderer._draw_field_pattern(style)
+
+    assert len(paths) == expected_paths
+
+
+def test_stars_field_pattern_draws_star_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
+    renderer = Renderer()
+    star_vertices: list[int] = []
+    draw_polygon = pygame.draw.polygon
+
+    def capture_polygon(
+        surface: pygame.Surface,
+        color: tuple[int, int, int],
+        points: list[tuple[int, int]],
+        width: int = 0,
+    ) -> pygame.Rect:
+        if color == pal.YELLOW:
+            star_vertices.append(len(points))
+        return draw_polygon(surface, color, points, width)
+
+    monkeypatch.setattr(pygame.draw, "polygon", capture_polygon)
+
+    renderer._draw_field_pattern("stars")
+
+    assert star_vertices
+    assert all(vertices == 10 for vertices in star_vertices)
 
 
 def test_appearance_preview_renders_every_hud_style(ctx: AppContext) -> None:

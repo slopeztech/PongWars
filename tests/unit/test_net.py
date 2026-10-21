@@ -128,6 +128,19 @@ def test_snapshot_carries_random_portal_positions() -> None:
     assert snapshot.capture(mirror)["portals"] == snapshot.capture(source)["portals"]
 
 
+def test_snapshot_round_trips_built_blocks() -> None:
+    config = MatchConfig(seed=10)
+    source = World(config)
+    mirror = World(config)
+
+    assert source.build_block(0)
+    snapshot.apply(mirror, snapshot.capture(source))
+
+    block = next(obstacle for obstacle in mirror.obstacles if obstacle.kind == "built")
+    assert block.active and block.hp == 1 and block.owner == 0
+    assert snapshot.capture(mirror) == snapshot.capture(source)
+
+
 def test_blend_and_events() -> None:
     a = {"balls": [[0, 0, 1, 1, None, None]], "paddles": [], "cats": [], "obs": []}
     b = {"balls": [[10, 0, 1, 1, None, None]], "paddles": [], "cats": [], "obs": []}

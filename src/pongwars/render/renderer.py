@@ -14,6 +14,8 @@ from pongwars.core.settings import BALL_STYLES, FIELD_STYLES, TRAIL_STYLES
 from pongwars.domain import constants as c
 from pongwars.domain.entities import Ball, Paddle, Rect
 from pongwars.domain.events import (
+    BallReleased,
+    BallSwallowed,
     BallWarped,
     BombDetonated,
     BumperHit,
@@ -21,9 +23,11 @@ from pongwars.domain.events import (
     Event,
     Goal,
     LaserFired,
+    LeviathanRoared,
     MissileHit,
     PaddleHit,
     PickupCollected,
+    StalkerExploded,
     WallHit,
 )
 from pongwars.domain.vec import Vec2
@@ -68,6 +72,7 @@ KIND_COLORS = {
     "bumper": pal.ORANGE,
     "moving": pal.PINK,
     "destructible": pal.BROWN,
+    "built": pal.UI_CYAN,
 }
 Point = tuple[float, float]
 Corner = tuple[float, float, float]
@@ -170,7 +175,18 @@ class Renderer:
         """
         pos = world.ball.pos
         for event in events:
-            if isinstance(event, LaserFired):
+            if isinstance(event, StalkerExploded):
+                self.explosions.append(Explosion(event.x, event.y))
+                self._burst(event.x, event.y, pal.LIME, 28)
+                self._shake(SHAKE_GOAL * 0.8)
+            elif isinstance(event, BallSwallowed):
+                self._burst(event.x, event.y, pal.YELLOW, 10)
+            elif isinstance(event, BallReleased):
+                self._burst(event.x, event.y, pal.UI_CYAN, 14)
+            elif isinstance(event, LeviathanRoared):
+                self._burst(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2, pal.LAVENDER, 24)
+                self._shake(SHAKE_GOAL)
+            elif isinstance(event, LaserFired):
                 rect = world.paddles[event.player].rect
                 self._lasers.append(
                     (
@@ -224,7 +240,7 @@ class Renderer:
         for explosion in self.explosions:
             explosion.update(dt)
         self.explosions = [e for e in self.explosions if e.progress < 1.0]
-        if self.settings.trail and world.phase.value == "playing":
+        if self.settings.trail and world.phase.value == "playing" and not world.ball.swallowed:
             self.trail.push(world.ball.pos.x, world.ball.pos.y)
 
     def viewports(self, world: World) -> list[Viewport]:
@@ -293,19 +309,29 @@ class Renderer:
     def _camera_for(self, view: Viewport, world: World | None = None) -> Camera:
         w, h = view.rect.size
         gravity_well = world is not None and world.config.arena == "gravity"
+        underside = self._leviathan_amount(world) if world is not None else 0.0
         if view.seat is None:
-            return Camera(w, h, incline=self._ramp_incline, gravity_well=gravity_well)
+            return Camera(
+                w,
+                h,
+                back=DEFAULT_BACK * (1 - underside) - 110.0 * underside,
+                height=DEFAULT_HEIGHT * (1 - underside) - 80.0 * underside,
+                incline=self._ramp_incline,
+                gravity_well=gravity_well,
+            )
         # Odd turns look along the long table axis, so pull the camera back and widen less.
         extent = (c.FIELD_WIDTH - c.FIELD_HEIGHT) / 2 if view.turns % 2 else 0.0
         focal = DEFAULT_FOCAL * w / LOW_W * (ODD_TURN_ZOOM if view.turns % 2 else 1.0)
         if view.turns % 2 and h < LOW_H:
             # Fit the rotated field in short panes and leave room for the countdown HUD.
             focal = min(focal, DEFAULT_FOCAL * h / LOW_H * 0.8)
+        back = DEFAULT_BACK + extent
+        height = DEFAULT_HEIGHT + extent
         return Camera(
             w,
             h,
-            back=DEFAULT_BACK + extent,
-            height=DEFAULT_HEIGHT + extent,
+            back=back * (1 - underside) - 110.0 * underside,
+            height=height * (1 - underside) - 80.0 * underside,
             focal=focal,
             quarter_turns=view.turns,
             incline=self._ramp_incline,
@@ -313,6 +339,8 @@ class Renderer:
         )
 
     def _draw_scene(self, world: World) -> None:
+        if self._leviathan_amount(world) > 0.0:
+            self._draw_leviathan(world)
         self._draw_table(world)
         items: list[tuple[float, str, int]] = []
         items += [
@@ -349,6 +377,17 @@ class Renderer:
             (self._sort(invader.pos.x, invader.pos.y), "invader", i)
             for i, invader in enumerate(world.extras.invaders)
         ]
+        items += [
+            (self._sort(stalker.pos.x, stalker.pos.y), "stalker", i)
+            for i, stalker in enumerate(world.extras.stalkers)
+        ]
+        items += [
+            (self._sort(chomper.pos.x, chomper.pos.y), "chomper", i)
+            for i, chomper in enumerate(world.extras.chompers)
+            if chomper.phase in ("roaming", "seeking", "releasing")
+            and any(chomper.ball is ball for ball in world.balls)
+        ]
+        items = [item for item in items if item[1] != "ball" or not world.balls[item[2]].swallowed]
         for _, kind, index in sorted(items):
             if kind == "portal":
                 self._portal(world, index)
@@ -370,6 +409,10 @@ class Renderer:
                 self._missile(world, index)
             elif kind == "invader":
                 self._invader(world, index)
+            elif kind == "stalker":
+                self._stalker(world, index)
+            elif kind == "chomper":
+                self._chomper(world, index)
             else:
                 self._ball(world, index)
         self._draw_shields(world)
@@ -631,6 +674,222 @@ class Renderer:
         tail_x = cx + (r + 1) * (1 if (self._clock // 8) % 2 else -1)
         pygame.draw.line(self._canvas, pal.ORANGE, (cx, cy + r // 2), (tail_x, cy - r // 2))
 
+    def _stalker(self, world: World, index: int) -> None:
+        stalker = world.extras.stalkers[index]
+        ground = self.camera.project(stalker.pos.x, stalker.pos.y)
+        pixel = max(1, round(ground.scale * 0.75))
+        cx = round(ground.sx)
+        bob = round(math.sin(self._clock / 5.0 + index) * pixel * 0.5)
+        foot_phase = round(math.sin(self._clock / 3.0 + index) * pixel)
+        ground_y = round(ground.sy) + bob
+
+        def block(x: int, y: int, width: int, height: int, color: pal.Color) -> None:
+            self._canvas.fill(
+                color,
+                (
+                    cx + x * pixel,
+                    ground_y - (y + height) * pixel,
+                    width * pixel,
+                    height * pixel,
+                ),
+            )
+
+        outline = (0, 55, 27)
+        shadow = (0, 91, 39)
+        mid_green = (0, 154, 47)
+        bright_green = (40, 205, 57)
+        highlight = (89, 238, 74)
+
+        pygame.draw.line(
+            self._canvas,
+            pal.NAVY,
+            (cx - 9 * pixel, ground_y + pixel),
+            (cx + 9 * pixel, ground_y + pixel),
+            max(1, pixel),
+        )
+
+        # Feet and blocky torso.
+        block(-5, 0, 4, 4 + max(0, foot_phase), outline)
+        block(1, 0, 4, 4 + max(0, -foot_phase), outline)
+        block(-4, 1, 3, 3 + max(0, foot_phase), mid_green)
+        block(2, 1, 3, 3 + max(0, -foot_phase), shadow)
+        block(-4, 4, 8, 9, outline)
+        block(-3, 5, 6, 7, mid_green)
+        block(-2, 6, 2, 5, bright_green)
+        block(1, 7, 1, 2, highlight)
+        block(2, 5, 1, 2, shadow)
+        block(-6, 5, 2, 6, outline)
+        block(4, 5, 2, 6, outline)
+        block(-5, 6, 1, 4, shadow)
+        block(5, 6, 1, 4, mid_green)
+
+        # Oversized square head with a dark pixel outline and shaded sides.
+        block(-7, 12, 14, 10, outline)
+        block(-6, 13, 12, 8, mid_green)
+        block(-5, 14, 7, 6, bright_green)
+        block(2, 14, 3, 6, shadow)
+        block(-4, 19, 5, 1, highlight)
+        block(3, 19, 1, 1, highlight)
+
+        # Square black eyes and a downturned, pixel-stepped mouth.
+        block(-4, 17, 2, 2, pal.BLACK)
+        block(2, 17, 2, 2, pal.BLACK)
+        block(-2, 14, 4, 1, pal.BLACK)
+        block(-3, 15, 1, 2, pal.BLACK)
+        block(2, 15, 1, 2, pal.BLACK)
+
+    def _chomper(self, world: World, index: int) -> None:
+        chomper = world.extras.chompers[index]
+        target = chomper.ball.pos
+        center = self.camera.project(chomper.pos.x, chomper.pos.y, BALL_LIFT)
+        radius = max(3, round(c.CHOMPER_RADIUS * center.scale))
+        cx, cy = round(center.sx), round(center.sy)
+        pygame.draw.circle(self._canvas, pal.YELLOW, (cx, cy), radius)
+        target_point = self.camera.project(target.x, target.y, BALL_LIFT)
+        angle = math.atan2(target_point.sy - center.sy, target_point.sx - center.sx)
+        aperture = 0.25 + 0.18 * (0.5 + 0.5 * math.sin(self._clock / 2))
+        mouth = [
+            (cx, cy),
+            (
+                round(cx + radius * math.cos(angle - aperture)),
+                round(cy + radius * math.sin(angle - aperture)),
+            ),
+            (
+                round(cx + radius * math.cos(angle + aperture)),
+                round(cy + radius * math.sin(angle + aperture)),
+            ),
+        ]
+        pygame.draw.polygon(self._canvas, pal.NAVY, mouth)
+        glint = self.camera.project(chomper.pos.x - 1.2, chomper.pos.y - 1.5, BALL_LIFT + 0.5)
+        self._canvas.fill(pal.WHITE, (round(glint.sx), round(glint.sy), 1, 1))
+
+    def _leviathan_amount(self, world: World | None) -> float:
+        if world is None:
+            return 0.0
+        transition = max(1, round(c.LEVIATHAN_TRANSITION_SECONDS * c.TICK_RATE))
+        amount = 0.0
+        for effects in world.extras.active:
+            for effect in effects:
+                if effect.name != "leviathan":
+                    continue
+                elapsed = effect.spec.ticks - effect.remaining
+                progress = max(0.0, min(1.0, elapsed / transition, effect.remaining / transition))
+                amount = max(amount, progress * progress * (3.0 - 2.0 * progress))
+        return amount
+
+    def _draw_leviathan(self, world: World) -> None:
+        amount = self._leviathan_amount(world)
+        edge_y = -5.0 + 100.0 * amount
+        centre_x = c.FIELD_WIDTH / 2
+
+        def screen(x: float, y: float, z: float) -> Point:
+            point = self.camera.project(x, y, z)
+            return round(point.sx), round(point.sy)
+
+        def polygon(points: list[tuple[float, float, float]], color: pal.Color) -> None:
+            pygame.draw.polygon(self._canvas, color, [screen(*point) for point in points])
+
+        # Fan the limbs out from behind the skull; the board is drawn afterward to
+        # occlude the parts that have already slipped underneath it.
+        for arm in range(8):
+            side = -1 if arm < 4 else 1
+            fan = arm % 4
+            root_x = centre_x + side * (5.0 + fan * 8.0)
+            length = 22.0 + fan * 4.0
+            points = []
+            for step in range(11):
+                fraction = step / 10
+                x = (
+                    root_x
+                    + side * fraction * length * 0.75
+                    + math.sin(self._clock / 7 + arm + fraction * 3.0) * (1 + fraction * 3)
+                )
+                y = edge_y + 7.0 + fraction * (13.0 + fan * 3.0)
+                z = 7.0 + math.sin(self._clock / 6 + arm + fraction * 4) * 1.5
+                points.append(screen(x, y, z))
+            width = max(2, round(self.camera.project(root_x, edge_y, 8.0).scale * 6))
+            pygame.draw.lines(self._canvas, pal.shade(pal.NAVY, 0.45), False, points, width + 2)
+            pygame.draw.lines(self._canvas, pal.shade(pal.BLUE, 0.55), False, points, width)
+            for step in (3, 5, 7, 9):
+                pygame.draw.circle(
+                    self._canvas,
+                    pal.LAVENDER,
+                    points[step],
+                    max(1, round(width * (0.22 if step < 8 else 0.16))),
+                )
+            pygame.draw.circle(
+                self._canvas,
+                pal.PINK,
+                points[-1],
+                max(2, round(width * 0.65)),
+            )
+
+        skull = self.camera.project(centre_x, edge_y + 5.0, 17.0)
+        skull_rect = pygame.Rect(
+            0, 0, max(20, round(82 * skull.scale)), max(14, round(46 * skull.scale))
+        )
+        skull_rect.center = (round(skull.sx), round(skull.sy))
+        pygame.draw.ellipse(self._canvas, pal.shade(pal.NAVY, 0.5), skull_rect.inflate(6, 4))
+        pygame.draw.ellipse(self._canvas, pal.shade(pal.BLUE, 0.48), skull_rect)
+        pygame.draw.ellipse(self._canvas, pal.LAVENDER, skull_rect, max(1, round(skull.scale * 2)))
+
+        for side in (-1, 1):
+            polygon(
+                [
+                    (centre_x + side * 24, edge_y + 1, 25),
+                    (centre_x + side * 39, edge_y - 5, 30),
+                    (centre_x + side * 32, edge_y + 9, 17),
+                ],
+                pal.shade(pal.LAVENDER, 0.65),
+            )
+
+            eye = self.camera.project(centre_x + side * 15.0, edge_y + 1.0, 25.0)
+            eye_pos = (round(eye.sx), round(eye.sy))
+            pygame.draw.circle(
+                self._canvas,
+                pal.shade(pal.NAVY, 0.45),
+                eye_pos,
+                max(3, round(eye.scale * 5)),
+            )
+            pygame.draw.circle(
+                self._canvas,
+                pal.ORANGE,
+                eye_pos,
+                max(2, round(eye.scale * 3)),
+            )
+            pygame.draw.circle(
+                self._canvas,
+                pal.WHITE,
+                (eye_pos[0] - max(1, round(eye.scale)), eye_pos[1] - max(1, round(eye.scale))),
+                max(1, round(eye.scale)),
+            )
+
+        jaw = self.camera.project(centre_x, edge_y + 13.0, 16.0)
+        jaw_rect = pygame.Rect(0, 0, max(14, round(48 * jaw.scale)), max(5, round(13 * jaw.scale)))
+        jaw_rect.center = (round(jaw.sx), round(jaw.sy))
+        pygame.draw.ellipse(self._canvas, pal.PURPLE, jaw_rect)
+        for tooth in range(7):
+            x = centre_x + (tooth - 3) * 5.0
+            polygon(
+                [
+                    (x - 1.8, edge_y + 9.0, 21),
+                    (x + 1.8, edge_y + 9.0, 21),
+                    (x, edge_y + 13.0, 21),
+                ],
+                pal.WHITE,
+            )
+
+        for spine in range(5):
+            x = centre_x + (spine - 2) * 11.0
+            polygon(
+                [
+                    (x - 4, edge_y - 2, 24),
+                    (x, edge_y - 10 - (spine % 2) * 3, 31),
+                    (x + 4, edge_y - 2, 24),
+                ],
+                pal.shade(pal.BLUE, 0.65),
+            )
+
     def _sort(self, x: float, y: float) -> float:
         return self.camera.rotate(x - c.FIELD_WIDTH / 2, y - c.FIELD_HEIGHT / 2)[1]
 
@@ -759,18 +1018,23 @@ class Renderer:
                     if style == "dots":
                         pygame.draw.circle(self._canvas, pal.shade(pal.BLUE, 0.45), center, 1)
                     else:
-                        color = pal.shade(pal.PINK if (x + y) % 3 else pal.WHITE, 0.65)
-                        pygame.draw.line(
+                        radius = 3 + (x + y) % 3
+                        vertices = [
+                            self.camera.project(
+                                x
+                                + math.cos(step * math.pi / 5 - math.pi / 2)
+                                * (radius if step % 2 == 0 else radius / 2),
+                                y
+                                + math.sin(step * math.pi / 5 - math.pi / 2)
+                                * (radius if step % 2 == 0 else radius / 2),
+                                0,
+                            )
+                            for step in range(10)
+                        ]
+                        pygame.draw.polygon(
                             self._canvas,
-                            color,
-                            (center[0] - 1, center[1]),
-                            (center[0] + 1, center[1]),
-                        )
-                        pygame.draw.line(
-                            self._canvas,
-                            color,
-                            (center[0], center[1] - 1),
-                            (center[0], center[1] + 1),
+                            pal.YELLOW,
+                            [(round(vertex.sx), round(vertex.sy)) for vertex in vertices],
                         )
         elif style in ("diagonal", "crosshatch"):
             step = 20
@@ -808,20 +1072,47 @@ class Renderer:
                     )
         elif style in ("rings", "target", "radial"):
             ring_center = self.camera.project(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2, 0)
-            for index, radius in enumerate(range(8, 49, 8)):
-                points = [
-                    self.camera.project(
-                        c.FIELD_WIDTH / 2 + math.cos(step * math.tau / 32) * radius,
-                        c.FIELD_HEIGHT / 2 + math.sin(step * math.tau / 32) * radius,
-                        0,
+            if style in ("rings", "target"):
+                for index, radius in enumerate(range(8, 49, 8)):
+                    points = [
+                        self.camera.project(
+                            c.FIELD_WIDTH / 2 + math.cos(step * math.tau / 32) * radius,
+                            c.FIELD_HEIGHT / 2 + math.sin(step * math.tau / 32) * radius,
+                            0,
+                        )
+                        for step in range(33)
+                    ]
+                    pygame.draw.lines(
+                        self._canvas,
+                        pal.shade(
+                            pal.PINK if style == "target" and index == 0 else pal.BLUE,
+                            0.35 + index * 0.08,
+                        ),
+                        False,
+                        [(round(point.sx), round(point.sy)) for point in points],
                     )
-                    for step in range(33)
-                ]
-                pygame.draw.lines(
+            if style == "target":
+                half_w, half_h = c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2
+                crosshair = (
+                    ((half_w, 0), (half_w, c.FIELD_HEIGHT)),
+                    ((0, half_h), (c.FIELD_WIDTH, half_h)),
+                )
+                for start, end in crosshair:
+                    points = [
+                        self.camera.project(position[0], position[1], 0)
+                        for position in (start, end)
+                    ]
+                    pygame.draw.lines(
+                        self._canvas,
+                        pal.PINK,
+                        False,
+                        [(round(point.sx), round(point.sy)) for point in points],
+                    )
+                pygame.draw.circle(
                     self._canvas,
-                    pal.shade(pal.PINK if style == "target" else pal.BLUE, 0.35 + index * 0.08),
-                    False,
-                    [(round(point.sx), round(point.sy)) for point in points],
+                    pal.YELLOW,
+                    (round(ring_center.sx), round(ring_center.sy)),
+                    2,
                 )
             if style == "radial":
                 for angle in range(0, 360, 30):
@@ -837,18 +1128,35 @@ class Renderer:
                         (round(edge.sx), round(edge.sy)),
                     )
         elif style in ("stripes", "scanlines"):
-            step = 6 if style == "scanlines" else 12
-            color = pal.shade(pal.BLUE, 0.35 if style == "stripes" else 0.25)
-            for y in range(0, int(c.FIELD_HEIGHT), step):
-                points = [
-                    self.camera.project(x, y, 0) for x in range(0, int(c.FIELD_WIDTH) + 1, 10)
-                ]
-                pygame.draw.lines(
-                    self._canvas,
-                    color,
-                    False,
-                    [(round(point.sx), round(point.sy)) for point in points],
-                )
+            if style == "stripes":
+                color = pal.shade(pal.BLUE, 0.35)
+                stripe_width = c.FIELD_WIDTH / 9
+                for stripe_x in (
+                    c.FIELD_WIDTH / 6,
+                    c.FIELD_WIDTH / 2,
+                    5 * c.FIELD_WIDTH / 6,
+                ):
+                    self._quad(
+                        [
+                            (stripe_x, 0, 0),
+                            (stripe_x + stripe_width, 0, 0),
+                            (stripe_x + stripe_width, c.FIELD_HEIGHT, 0),
+                            (stripe_x, c.FIELD_HEIGHT, 0),
+                        ],
+                        color,
+                    )
+            else:
+                color = pal.shade(pal.BLUE, 0.25)
+                for y in range(0, int(c.FIELD_HEIGHT), 6):
+                    points = [
+                        self.camera.project(x, y, 0) for x in range(0, int(c.FIELD_WIDTH) + 1, 10)
+                    ]
+                    pygame.draw.lines(
+                        self._canvas,
+                        color,
+                        False,
+                        [(round(point.sx), round(point.sy)) for point in points],
+                    )
         elif style == "waves":
             for band in range(5):
                 points = [
@@ -868,41 +1176,106 @@ class Renderer:
                 )
         elif style in ("diamonds", "boxes", "maze", "circuit", "lanes", "sparkle"):
             color = pal.shade(pal.UI_CYAN if style in ("circuit", "sparkle") else pal.BLUE, 0.48)
+            if style == "boxes":
+                for inset, box_color in ((0.12, color), (0.3, pal.PINK)):
+                    x0, x1 = c.FIELD_WIDTH * inset, c.FIELD_WIDTH * (1 - inset)
+                    y0, y1 = c.FIELD_HEIGHT * inset, c.FIELD_HEIGHT * (1 - inset)
+                    points = [
+                        self.camera.project(x, y, 0)
+                        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+                    ]
+                    pygame.draw.lines(
+                        self._canvas,
+                        box_color,
+                        True,
+                        [(round(point.sx), round(point.sy)) for point in points],
+                    )
+                return
+            if style == "maze":
+                paths = (
+                    ((0.1, 0.1), (0.45, 0.1), (0.45, 0.45), (0.2, 0.45), (0.2, 0.8)),
+                    ((0.9, 0.1), (0.65, 0.1), (0.65, 0.6), (0.4, 0.6), (0.4, 0.9)),
+                    ((0.9, 0.8), (0.7, 0.8), (0.7, 0.4), (0.9, 0.4)),
+                )
+                for path in paths:
+                    points = [
+                        self.camera.project(x * c.FIELD_WIDTH, y * c.FIELD_HEIGHT, 0)
+                        for x, y in path
+                    ]
+                    pygame.draw.lines(
+                        self._canvas,
+                        pal.LAVENDER,
+                        False,
+                        [(round(point.sx), round(point.sy)) for point in points],
+                    )
+                return
+            if style == "circuit":
+                for circuit_x, circuit_y in (
+                    (0.2, 0.25),
+                    (0.7, 0.3),
+                    (0.38, 0.72),
+                    (0.82, 0.75),
+                ):
+                    path = (
+                        (circuit_x - 0.12, circuit_y),
+                        (circuit_x, circuit_y),
+                        (circuit_x, circuit_y + 0.16),
+                        (circuit_x + 0.12, circuit_y + 0.16),
+                    )
+                    points = [
+                        self.camera.project(px * c.FIELD_WIDTH, py * c.FIELD_HEIGHT, 0)
+                        for px, py in path
+                    ]
+                    pygame.draw.lines(
+                        self._canvas,
+                        color,
+                        False,
+                        [(round(point.sx), round(point.sy)) for point in points],
+                    )
+                    endpoint = self.camera.project(
+                        (circuit_x + 0.12) * c.FIELD_WIDTH,
+                        (circuit_y + 0.16) * c.FIELD_HEIGHT,
+                        0,
+                    )
+                    pygame.draw.circle(
+                        self._canvas, pal.UI_CYAN, (round(endpoint.sx), round(endpoint.sy)), 1
+                    )
+                return
+            if style == "lanes":
+                for lane in (c.FIELD_WIDTH / 4, c.FIELD_WIDTH / 2, 3 * c.FIELD_WIDTH / 4):
+                    points = [
+                        self.camera.project(lane, y, 0)
+                        for y in range(0, int(c.FIELD_HEIGHT) + 1, 5)
+                    ]
+                    pygame.draw.lines(
+                        self._canvas,
+                        color,
+                        False,
+                        [(round(point.sx), round(point.sy)) for point in points],
+                        2 if lane == c.FIELD_WIDTH / 2 else 1,
+                    )
+                lane_center = self.camera.project(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2, 0)
+                pygame.draw.circle(
+                    self._canvas,
+                    pal.WHITE,
+                    (round(lane_center.sx), round(lane_center.sy)),
+                    2,
+                )
+                return
             for x in range(0, int(c.FIELD_WIDTH), 20):
                 for y in range(0, int(c.FIELD_HEIGHT), 15):
-                    if style == "lanes":
-                        if x % 40 == 0:
-                            points = [
-                                self.camera.project(x, yy, 0)
-                                for yy in range(0, int(c.FIELD_HEIGHT) + 1, 5)
-                            ]
-                            pygame.draw.lines(
-                                self._canvas,
-                                color,
-                                False,
-                                [(round(p.sx), round(p.sy)) for p in points],
-                            )
-                        continue
                     if style == "sparkle":
                         sparkle_center = self.camera.project(x + 10, y + 7, 0)
                         cx, cy = round(sparkle_center.sx), round(sparkle_center.sy)
                         pygame.draw.line(self._canvas, color, (cx - 2, cy), (cx + 2, cy))
                         pygame.draw.line(self._canvas, color, (cx, cy - 2), (cx, cy + 2))
                         continue
-                    if style == "circuit" and (x + y) % 40:
-                        continue
-                    if style == "maze" and (x // 20 + y // 15) % 2:
-                        continue
-                    corners = (
-                        [
-                            (x + 10, y, 0),
-                            (x + 20, y + 7.5, 0),
-                            (x + 10, y + 15, 0),
-                            (x, y + 7.5, 0),
-                        ]
-                        if style == "diamonds"
-                        else [(x, y, 0), (x + 20, y, 0), (x + 20, y + 15, 0), (x, y + 15, 0)]
-                    )
+                    corners = [
+                        (x + 10, y, 0),
+                        (x + 20, y + 7.5, 0),
+                        (x + 10, y + 15, 0),
+                        (x, y + 7.5, 0),
+                    ]
                     projected = [self.camera.project(px, py, 0) for px, py, _ in corners]
                     pygame.draw.lines(
                         self._canvas,
@@ -910,13 +1283,6 @@ class Renderer:
                         True,
                         [(round(point.sx), round(point.sy)) for point in projected],
                     )
-                    if style == "circuit":
-                        pygame.draw.circle(
-                            self._canvas,
-                            pal.UI_CYAN,
-                            (round(projected[0].sx), round(projected[0].sy)),
-                            1,
-                        )
 
     def _draw_checkerboard(self) -> None:
         columns, rows = 8, 6

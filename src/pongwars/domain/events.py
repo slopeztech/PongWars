@@ -155,6 +155,36 @@ class CatPounced(Event):
 
 
 @dataclass(frozen=True)
+class StalkerExploded(Event):
+    """@brief The pursuing creature exploded beside its target paddle."""
+
+    player: int
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
+class BallSwallowed(Event):
+    """@brief The temporary orb swallowed a ball."""
+
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
+class BallReleased(Event):
+    """@brief The temporary orb released a ball at a new position."""
+
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
+class LeviathanRoared(Event):
+    """@brief The abyssal leviathan appeared behind the arena."""
+
+
+@dataclass(frozen=True)
 class MissileHit(Event):
     """@brief A missile hit an obstacle or player.
     @param player Missile owner.

@@ -25,7 +25,9 @@ from pongwars.core.settings import (
 from pongwars.domain import constants as c
 from pongwars.domain.arenas import ArenaSpec, arena_names, get_arena
 from pongwars.domain.config import AI_DIFFICULTIES, MAX_PLAYERS, ConfigError, MatchConfig
+from pongwars.domain.events import PickupCollected
 from pongwars.domain.modes import MODES, OptionSpec
+from pongwars.domain.vec import Vec2
 from pongwars.domain.world import Phase, World
 from pongwars.input.controllers import (
     FIRE_KEYS,
@@ -197,6 +199,7 @@ class TitleScreen(Screen):
         """
         super().__init__(ctx)
         self.clock = 0.0
+        self._developer_code = 0
 
     def update(self, dt: float) -> None:
         """@brief Advance the blink timer.
@@ -205,15 +208,25 @@ class TitleScreen(Screen):
         self.clock += dt
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        """@brief Enter opens the main menu, Esc quits.
+        """@brief Enter opens the main menu; 4 then 2 opens the developer menu.
         @param event pygame event.
         """
         if event.type != pygame.KEYDOWN:
             return
         if event.key == pygame.K_ESCAPE:
             self.ctx.stack.pop()
+        elif event.key in (pygame.K_4, pygame.K_KP4):
+            self._developer_code = 1
+        elif event.key in (pygame.K_2, pygame.K_KP2) and self._developer_code == 1:
+            from pongwars.ui.developer import DeveloperMenuScreen
+
+            self._developer_code = 0
+            self.ctx.stack.push(DeveloperMenuScreen(self.ctx))
         elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+            self._developer_code = 0
             self.ctx.stack.push(MainMenuScreen(self.ctx))
+        else:
+            self._developer_code = 0
 
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Draw the logo and prompt.
@@ -652,17 +665,34 @@ def draw_arena_preview(surface: pygame.Surface, spec: ArenaSpec, box: pygame.Rec
 class MatchScreen(Screen):
     """@brief Runs a match: simulation, input, rendering and audio."""
 
-    def __init__(self, ctx: AppContext, config: MatchConfig, view: str | None = None) -> None:
+    def __init__(
+        self,
+        ctx: AppContext,
+        config: MatchConfig,
+        view: str | None = None,
+        *,
+        practice_extra: str | None = None,
+    ) -> None:
         """@brief Create the match.
         @param ctx Application context.
         @param config Match configuration.
         @param view Camera mode override ("shared" or "split").
+        @param practice_extra Extra delivered automatically to the player's paddle.
         """
         super().__init__(ctx)
         s = ctx.settings
         self.config = config
+        self.practice_extra = practice_extra
+        self._practice_extra_waiting = False
         self.view = view or s.view
         self.world = World(config)
+        if practice_extra is not None:
+            from pongwars.ui.developer import place_practice_pickup
+
+            self.world.phase = Phase.PLAYING
+            self.world.ball.vel = Vec2(c.BALL_START_SPEED * 0.7, c.BALL_START_SPEED * 0.7)
+            self.world.extras.auto_spawn_enabled = False
+            place_practice_pickup(self.world, practice_extra)
         render_settings = _make_render_settings(s, "split" if self.view == "split" else "shared")
         self.renderer = Renderer(render_settings, config.seed, ctx.translator)
         self.humans = [config.controllers[i] == "human" for i in range(self.world.players)]
@@ -685,6 +715,18 @@ class MatchScreen(Screen):
         return KeyboardInput(self.ctx.keymap.get(seat), pygame.key.get_pressed)
 
     def _step(self) -> None:
+        if self.practice_extra is not None:
+            from pongwars.ui.developer import (
+                place_practice_pickup,
+                practice_extra_is_active,
+            )
+
+            if self._practice_extra_waiting and not practice_extra_is_active(
+                self.world, self.practice_extra
+            ):
+                self._practice_extra_waiting = False
+            if not self._practice_extra_waiting:
+                place_practice_pickup(self.world, self.practice_extra)
         held = poll_fire(self.humans, pygame.key.get_pressed)
         fire = tuple(
             h or (p and human)
@@ -698,6 +740,13 @@ class MatchScreen(Screen):
         )
         self._spin_taps = [False] * len(self._spin_taps)
         events = self.world.step(collect_inputs(self.controllers, fire, spin))
+        if self.practice_extra is not None and any(
+            isinstance(event, PickupCollected)
+            and event.name == self.practice_extra
+            and event.player == 0
+            for event in events
+        ):
+            self._practice_extra_waiting = True
         self.renderer.handle_events(self.world, events)
         self.ctx.audio.handle_events(events)
 
@@ -706,7 +755,7 @@ class MatchScreen(Screen):
         @param event pygame event.
         """
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            self.ctx.stack.push(PauseScreen(self.ctx))
+            self.ctx.stack.push(PauseScreen(self.ctx, practice=self.practice_extra is not None))
         elif event.type == pygame.KEYDOWN and event.key in FIRE_KEYS:
             seat = FIRE_KEYS.index(event.key)
             if seat < len(self._fire_taps):
@@ -726,7 +775,15 @@ class MatchScreen(Screen):
         self.renderer.update(self.world, dt)
         if self.world.phase is Phase.FINISHED:
             self.ctx.audio.start_music("menu")
-            self.ctx.stack.replace(ResultsScreen(self.ctx, self.config, self.world, self.view))
+            self.ctx.stack.replace(
+                ResultsScreen(
+                    self.ctx,
+                    self.config,
+                    self.world,
+                    self.view,
+                    practice_extra=self.practice_extra,
+                )
+            )
 
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Render the world.
@@ -741,11 +798,13 @@ class PauseScreen(MenuScreen):
     transparent = True
     title_key = "pause.title"
 
-    def __init__(self, ctx: AppContext) -> None:
+    def __init__(self, ctx: AppContext, *, practice: bool = False) -> None:
         """@brief Build the menu.
         @param ctx Application context.
+        @param practice Return to the developer extra catalogue when quitting.
         """
         super().__init__(ctx)
+        self.practice = practice
         t = ctx.t
         self.menu.set_items(
             [
@@ -760,7 +819,12 @@ class PauseScreen(MenuScreen):
 
     def _quit(self) -> None:
         self.ctx.audio.start_music("menu")
-        self.ctx.stack.pop_to(MainMenuScreen)
+        if self.practice:
+            from pongwars.ui.developer import ExtraTestingScreen
+
+            self.ctx.stack.pop_to(ExtraTestingScreen)
+        else:
+            self.ctx.stack.pop_to(MainMenuScreen)
 
     def draw(self, surface: pygame.Surface) -> None:
         """@brief Dim the match and draw the menu.
@@ -780,7 +844,13 @@ class ResultsScreen(MenuScreen):
     title_key = "results.title"
 
     def __init__(
-        self, ctx: AppContext, config: MatchConfig, world: World, view: str, lan: bool = False
+        self,
+        ctx: AppContext,
+        config: MatchConfig,
+        world: World,
+        view: str,
+        lan: bool = False,
+        practice_extra: str | None = None,
     ) -> None:
         """@brief Build the screen.
         @param ctx Application context.
@@ -788,11 +858,13 @@ class ResultsScreen(MenuScreen):
         @param world Finished world.
         @param view Camera mode used.
         @param lan True for a network match (only "back to menu" is offered).
+        @param practice_extra Extra being tested, if this is a developer practice match.
         """
         super().__init__(ctx)
         self.config = config
         self.world = world
         self.view = view
+        self.practice_extra = practice_extra
         t = ctx.t
         rows = [
             MenuItem(lambda: t("results.rematch"), on_activate=self.rematch),
@@ -815,13 +887,25 @@ class ResultsScreen(MenuScreen):
     def rematch(self) -> None:
         """@brief Replay with a fresh seed."""
         config = replace(self.config, seed=self.config.seed + 1)
-        self.ctx.stack.replace(MatchScreen(self.ctx, config, self.view))
+        self.ctx.stack.replace(
+            MatchScreen(self.ctx, config, self.view, practice_extra=self.practice_extra)
+        )
 
     def _to_setup(self) -> None:
-        self.ctx.stack.pop()
+        if self.practice_extra is not None:
+            from pongwars.ui.developer import ExtraTestingScreen
+
+            self.ctx.stack.pop_to(ExtraTestingScreen)
+        else:
+            self.ctx.stack.pop()
 
     def _to_menu(self) -> None:
-        self.ctx.stack.pop_to(MainMenuScreen)
+        if self.practice_extra is not None:
+            from pongwars.ui.developer import ExtraTestingScreen
+
+            self.ctx.stack.pop_to(ExtraTestingScreen)
+        else:
+            self.ctx.stack.pop_to(MainMenuScreen)
 
     def back(self) -> None:
         """@brief Esc returns to the setup form (or the menu for a network match)."""

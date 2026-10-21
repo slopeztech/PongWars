@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from pongwars.domain.vec import Vec2
 
-OBSTACLE_KINDS = ("solid", "bumper", "destructible")
+OBSTACLE_KINDS = ("solid", "bumper", "destructible", "built")
 
 
 @dataclass
@@ -76,6 +76,29 @@ class Ball:
     stored_vel: Vec2 = field(default_factory=Vec2)
     rotation: float = 0.0
     spin_rate: float = 0.0
+    swallowed: bool = False
+
+
+@dataclass
+class Stalker:
+    """@brief Slow pixel creature that pursues a penalized player's paddle."""
+
+    pos: Vec2
+    target: int
+    ttl: int
+
+
+@dataclass
+class Chomper:
+    """@brief Roaming orb that catches a ball, relocates and releases it."""
+
+    pos: Vec2
+    ball: Ball
+    owner: int
+    ttl: int
+    phase: str = "roaming"
+    phase_ticks: int = 0
+    target: Vec2 | None = None
 
 
 @dataclass
@@ -137,6 +160,7 @@ class Obstacle:
     period: int = 0
     active: bool = True
     orbit: bool = False
+    owner: int | None = None
 
     def __post_init__(self) -> None:
         """@brief Remember the home position used by the patrol path."""

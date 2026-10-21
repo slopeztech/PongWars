@@ -22,7 +22,8 @@ The preview focuses on the selected option: paddle patterns, the ball, and its
 trail are enlarged so their details are visible. The selected player's paddle
 uses the same standard angle and scale for all four player slots. Field styles
 use an individual icon for each of the 20 designs, so the pattern is clear even
-in the small preview panel and does not depend on the arena camera. All four
+in the small preview panel and does not depend on the arena camera. Each field
+design in the preview matches the pattern drawn on the arena floor. All four
 player slots have a paddle in the sample scene, even when a regular match uses
 fewer players.
 
@@ -67,11 +68,11 @@ Grid, Checkerboard, Neon, Solid, Dots, Diagonal, Crosshatch, Rings, Target,
 Stripes, Waves, Diamonds, Circuit, Boxes, Radial, Stars, Lanes, Scanlines, Maze,
 Sparkle.
 
-## Backgrounds (22 choices)
+## Backgrounds (23 choices)
 
 None, Grid, Stars, Rain, Waves, Aurora, Nebula, Comets, Bubbles, Snowfall,
 Fireflies, Matrix, Circuit, Embers, Meteor shower, Spiral, Confetti, Starscape,
-Plasma, Rainbow, Gears, Pulse.
+Plasma, Rainbow, Gears, Pulse, Stadium.
 
 Background effects are decorative and do not change gameplay. **None** and
 **Grid** use the plain background; the other choices animate behind the arena.

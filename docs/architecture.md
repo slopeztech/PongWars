@@ -70,4 +70,5 @@ by tests). `Discovery` finds hosts by broadcast. `net` imports only `core` and `
 the screens live in `ui/lan.py`. The lobby roster and match-start message synchronize
 paddle colors and patterns against the full appearance catalog. Ball, trail, field,
 background, and HUD styling remain local render preferences. Incompatible LAN message
-changes are reflected in `PROTOCOL_VERSION`.
+changes are reflected in `PROTOCOL_VERSION`. The current snapshot includes the state of
+the temporary swallowed-ball and pursuing-creature extras.

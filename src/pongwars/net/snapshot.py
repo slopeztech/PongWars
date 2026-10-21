@@ -7,7 +7,18 @@ from dataclasses import fields
 from typing import Any
 
 from pongwars.domain import events as ev
-from pongwars.domain.entities import Ball, Cat, Companion, Invader, Missile, Paddle, Rect
+from pongwars.domain.entities import (
+    Ball,
+    Cat,
+    Chomper,
+    Companion,
+    Invader,
+    Missile,
+    Obstacle,
+    Paddle,
+    Rect,
+    Stalker,
+)
 from pongwars.domain.extras import EFFECTS, Pickup
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import Phase, World
@@ -31,6 +42,7 @@ def capture(world: World) -> dict[str, Any]:
     @param world Authoritative world.
     @return A JSON-friendly dict.
     """
+    ball_indices = {id(ball): index for index, ball in enumerate(world.balls)}
     return {
         "tick": world.tick,
         "phase": world.phase.value,
@@ -47,6 +59,7 @@ def capture(world: World) -> dict[str, Any]:
                 b.held_by,
                 _r(b.rotation),
                 _r(b.spin_rate),
+                b.swallowed,
             ]
             for b in world.balls
         ],
@@ -54,7 +67,19 @@ def capture(world: World) -> dict[str, Any]:
             [_r(p.rect.cx), _r(p.rect.cy), _r(p.rect.half_w), _r(p.rect.half_h)]
             for p in world.paddles
         ],
-        "obs": [[_r(o.rect.cx), _r(o.rect.cy), o.hp, int(o.active)] for o in world.obstacles],
+        "obs": [
+            [
+                _r(o.rect.cx),
+                _r(o.rect.cy),
+                o.hp,
+                int(o.active),
+                o.kind,
+                _r(o.rect.half_w),
+                _r(o.rect.half_h),
+                o.owner,
+            ]
+            for o in world.obstacles
+        ],
         "portals": [[_r(p.x), _r(p.y)] for p in world.portals],
         "pick": [
             [_r(p.pos.x), _r(p.pos.y), p.name, p.ttl, p.target, p.reduced]
@@ -86,6 +111,25 @@ def capture(world: World) -> dict[str, Any]:
                 _r(invader.anchor.y),
             ]
             for invader in world.extras.invaders
+        ],
+        "stalkers": [
+            [_r(stalker.pos.x), _r(stalker.pos.y), stalker.target, stalker.ttl]
+            for stalker in world.extras.stalkers
+        ],
+        "chompers": [
+            [
+                _r(chomper.pos.x),
+                _r(chomper.pos.y),
+                chomper.owner,
+                chomper.ttl,
+                ball_indices[id(chomper.ball)],
+                chomper.phase,
+                chomper.phase_ticks,
+                None if chomper.target is None else _r(chomper.target.x),
+                None if chomper.target is None else _r(chomper.target.y),
+            ]
+            for chomper in world.extras.chompers
+            if id(chomper.ball) in ball_indices
         ],
         "missiles": [
             [
@@ -121,7 +165,7 @@ def apply(world: World, state: dict[str, Any]) -> None:
 def _apply(world: World, state: dict[str, Any]) -> None:
     n = world.players
     paddles, obstacles = state["paddles"], state["obs"]
-    if len(paddles) != n or len(obstacles) != len(world.obstacles):
+    if len(paddles) != n or len(obstacles) < world._base_obstacle_count:
         raise ValueError("snapshot does not match the world")
     if not (len(state["scores"]) == len(state["alive"]) == len(state["fx"]) == n):
         raise ValueError("snapshot does not match the world")
@@ -136,6 +180,25 @@ def _apply(world: World, state: dict[str, Any]) -> None:
     world.winner = state["winner"]
     world.scores = [int(s) for s in state["scores"]]
     world.alive = [bool(a) for a in state["alive"]]
+    if len(obstacles) < len(world.obstacles):
+        if any(item.kind != "built" for item in world.obstacles[len(obstacles) :]):
+            raise ValueError("snapshot does not match the world")
+        del world.obstacles[len(obstacles) :]
+    for row in obstacles[len(world.obstacles) :]:
+        if len(row) < 8 or row[4] != "built" or row[7] is None:
+            raise ValueError("snapshot contains an invalid dynamic obstacle")
+        owner = int(row[7])
+        if not 0 <= owner < n:
+            raise ValueError("snapshot contains an invalid obstacle owner")
+        world.obstacles.append(
+            Obstacle(
+                Rect(float(row[0]), float(row[1]), float(row[5]), float(row[6])),
+                kind="built",
+                hp=int(row[2]),
+                active=bool(row[3]),
+                owner=owner,
+            )
+        )
     made = [_ball(row, world.ball.radius) for row in balls]
     world.ball = made[0]
     world.extra_balls = made[1:]
@@ -144,6 +207,14 @@ def _apply(world: World, state: dict[str, Any]) -> None:
     for obstacle, row in zip(world.obstacles, obstacles, strict=True):
         obstacle.rect.cx, obstacle.rect.cy = float(row[0]), float(row[1])
         obstacle.hp, obstacle.active = int(row[2]), bool(row[3])
+        if len(row) > 4 and row[4] != obstacle.kind:
+            raise ValueError("snapshot obstacle kind does not match the world")
+        if len(row) > 5:
+            obstacle.rect.half_w, obstacle.rect.half_h = float(row[5]), float(row[6])
+        if len(row) > 7:
+            obstacle.owner = None if row[7] is None else int(row[7])
+            if obstacle.kind == "built" and (obstacle.owner is None or not 0 <= obstacle.owner < n):
+                raise ValueError("snapshot contains an invalid obstacle owner")
     world.portals = tuple(Vec2(float(row[0]), float(row[1])) for row in portals)
     manager = world.extras
     manager.pickups = [
@@ -190,6 +261,24 @@ def _apply(world: World, state: dict[str, Any]) -> None:
             anchor_y,
         ) in state.get("invaders", [])
     ]
+    manager.stalkers = [
+        Stalker(Vec2(float(x), float(y)), int(target), int(ttl))
+        for x, y, target, ttl in state.get("stalkers", [])
+    ]
+    manager.chompers = [
+        Chomper(
+            Vec2(float(row[0]), float(row[1])),
+            world.balls[int(row[4])],
+            int(row[2]),
+            int(row[3]),
+            str(row[5]),
+            int(row[6]),
+            None
+            if len(row) < 9 or row[7] is None or row[8] is None
+            else Vec2(float(row[7]), float(row[8])),
+        )
+        for row in state.get("chompers", [])
+    ]
     manager.missiles = [
         Missile(
             Vec2(float(x), float(y)),
@@ -223,6 +312,7 @@ def _ball(row: list[Any], radius: float) -> Ball:
         held_by=None if held is None else int(held),
         rotation=float(row[6]) if len(row) > 6 else 0.0,
         spin_rate=float(row[7]) if len(row) > 7 else 0.0,
+        swallowed=bool(row[8]) if len(row) > 8 else False,
     )
 
 
@@ -262,6 +352,12 @@ def blend(a: dict[str, Any], b: dict[str, Any], alpha: float) -> dict[str, Any]:
                 for p, q in zip(a["cats"], b["cats"], strict=False)
             ]
         for key in ("companions", "missiles"):
+            if key in a and key in b and len(a[key]) == len(b[key]):
+                out[key] = [
+                    [_lerp(p[0], q[0], alpha), _lerp(p[1], q[1], alpha), *q[2:]]
+                    for p, q in zip(a[key], b[key], strict=False)
+                ]
+        for key in ("stalkers", "chompers"):
             if key in a and key in b and len(a[key]) == len(b[key]):
                 out[key] = [
                     [_lerp(p[0], q[0], alpha), _lerp(p[1], q[1], alpha), *q[2:]]

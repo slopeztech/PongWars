@@ -83,6 +83,7 @@ class World:
             if obstacles is None
             else obstacles
         )
+        self._base_obstacle_count = len(self.obstacles)
         self.portals = self._make_portals()
         self.paddles = _make_paddles(self.players)
         self.alive = [True] * self.players
@@ -139,8 +140,10 @@ class World:
             self._update_held()
             self.extras.update_companions()
             self.extras.update_invaders()
+            self.extras.update_stalkers(events)
+            self.extras.update_chompers(events)
             for ball in self.balls:
-                if self.phase is Phase.PLAYING and ball.held_by is None:
+                if self.phase is Phase.PLAYING and ball.held_by is None and not ball.swallowed:
                     ball.rotation = (ball.rotation + ball.spin_rate * c.DT) % (2.0 * math.pi)
                     self._curve_ball(ball)
                     self._apply_arena_gravity(ball)
@@ -181,7 +184,7 @@ class World:
             return
         acceleration = -math.tan(incline) * c.RAMP_GRAVITY
         for ball in self.balls:
-            if ball.held_by is not None:
+            if ball.held_by is not None or ball.swallowed:
                 continue
             ball.vel = ball.vel + Vec2(acceleration * c.DT, 0.0)
             speed = ball.vel.length()
@@ -263,7 +266,11 @@ class World:
         @param events Event list to append to.
         """
         obstacle = self.obstacles[index]
-        if obstacle.kind == "destructible" and obstacle.active:
+        if obstacle.kind == "built" and obstacle.active:
+            obstacle.hp = 0
+            obstacle.active = False
+            events.append(ObstacleDestroyed(index))
+        elif obstacle.kind == "destructible" and obstacle.active:
             obstacle.hp -= 1
             if obstacle.hp <= 0:
                 obstacle.active = False
@@ -279,6 +286,43 @@ class World:
             obstacle.hp = 0
             obstacle.active = False
             events.append(ObstacleDestroyed(index))
+
+    def build_block(self, player: int) -> bool:
+        """@brief Place one of at most two one-hit defensive blocks for a player."""
+        if (
+            sum(
+                obstacle.active and obstacle.kind == "built" and obstacle.owner == player
+                for obstacle in self.obstacles
+            )
+            >= 2
+        ):
+            return False
+
+        paddle = self.paddles[player]
+        owned_blocks = sum(
+            obstacle.kind == "built" and obstacle.owner == player for obstacle in self.obstacles
+        )
+        offset_sign = -1.0 if owned_blocks == 0 else 1.0
+        if paddle.axis == "y":
+            inward = 1.0 if player == SEAT_LEFT else -1.0
+            cy = min(max(paddle.rect.cy + offset_sign * 8.0, 9.0), c.FIELD_HEIGHT - 9.0)
+            rect = Rect(
+                paddle.rect.cx + inward * (paddle.rect.half_w + 5.0),
+                cy,
+                1.5,
+                7.0,
+            )
+        else:
+            inward = 1.0 if player == SEAT_TOP else -1.0
+            cx = min(max(paddle.rect.cx + offset_sign * 14.0, 14.0), c.FIELD_WIDTH - 14.0)
+            rect = Rect(
+                cx,
+                paddle.rect.cy + inward * (paddle.rect.half_h + 5.0),
+                13.0,
+                1.5,
+            )
+        self.obstacles.append(Obstacle(rect, kind="built", hp=1, owner=player))
+        return True
 
     def _handle_fire(self, inputs: FrameInputs, events: list[Event]) -> None:
         for seat in range(self.players):
@@ -327,6 +371,8 @@ class World:
 
     def _update_held(self) -> None:
         for ball in self.balls:
+            if ball.swallowed:
+                continue
             seat = ball.held_by
             if seat is None:
                 continue
@@ -386,6 +432,8 @@ class World:
         )
 
     def _move_ball(self, ball: Ball, events: list[Event]) -> None:
+        if ball.swallowed:
+            return
         time_left = c.DT
         for _ in range(c.MAX_COLLISIONS_PER_STEP):
             disp = ball.vel * time_left
@@ -693,10 +741,12 @@ class World:
             return
         self.extra_balls.clear()
         self.extras.cats.clear()
+        built = [obstacle for obstacle in self.obstacles if obstacle.kind == "built"]
         if self.config.arena == "fortress":
-            self.obstacles = get_arena("fortress").build_obstacles()
+            self.obstacles = get_arena("fortress").build_obstacles() + built
         elif self.config.arena == "arkanoid":
-            self.obstacles = self._make_arkanoid_blocks()
+            self.obstacles = self._make_arkanoid_blocks() + built
+        self._base_obstacle_count = len(self.obstacles) - len(built)
         self.ball = Ball(
             self.arena.serve.position,
             Vec2(),

@@ -22,6 +22,10 @@ SuddenDeath = "alarm"
 CatReleased = "meow"
 CatPounced = "pounce"
 BallWarped = "warp"
+StalkerExploded = "stalker_boom"
+BallSwallowed = "chomp"
+BallReleased = "release"
+LeviathanRoared = "abyssal_roar"
 
 [sounds.meow]
 wave = "triangle"
@@ -165,4 +169,32 @@ wave = "triangle"
 from = 160
 to = 520
 duration = 0.42
+volume = 0.55
+
+[sounds.stalker_boom]
+wave = "explosion"
+from = 95
+to = 28
+duration = 0.45
+volume = 0.65
+
+[sounds.chomp]
+wave = "square"
+from = 880
+to = 440
+duration = 0.11
+volume = 0.35
+
+[sounds.release]
+wave = "triangle"
+from = 520
+to = 1040
+duration = 0.18
+volume = 0.4
+
+[sounds.abyssal_roar]
+wave = "noise"
+from = 120
+to = 45
+duration = 0.6
 volume = 0.55

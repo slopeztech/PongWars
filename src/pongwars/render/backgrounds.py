@@ -17,6 +17,18 @@ WAVE_BANDS = 5
 AURORA_BANDS = 3
 BACKGROUND_GRADIENT_STEPS = 24
 AMBIENT_COLORS = (pal.BLUE, pal.PINK, pal.UI_CYAN, pal.LAVENDER, pal.LIME, pal.ORANGE)
+STADIUM_ROWS = 12
+SPECTATOR_COLORS = (
+    pal.BLUE,
+    pal.PINK,
+    pal.UI_CYAN,
+    pal.LAVENDER,
+    pal.LIME,
+    pal.ORANGE,
+    pal.RED,
+    pal.WHITE,
+)
+SPECTATOR_HAIR_COLORS = (pal.NAVY, pal.BROWN, pal.DARK_GREY, pal.PURPLE)
 Painter = Callable[[pygame.Surface, int, random.Random], None]
 
 
@@ -64,6 +76,248 @@ def _aurora(surface: pygame.Surface, tick: int, _rng: random.Random) -> None:
             y = round(h * (band + 0.5) / AURORA_BANDS + math.sin(phase) * h * 0.12)
             curtain_height = max(8, h // 3)
             pygame.draw.line(surface, color, (x, y), (x, y + curtain_height))
+
+
+def _stadium(surface: pygame.Surface, tick: int, rng: random.Random) -> None:
+    width, height = surface.get_size()
+    top_margin = max(2, round(height * 0.05))
+    side_margin = max(2, round(width * 0.035))
+    for row in range(STADIUM_ROWS):
+        if row == STADIUM_ROWS - 2:
+            continue
+        depth = (row + 1) / STADIUM_ROWS
+        scale = 0.35 + depth * 0.9
+        if row == STADIUM_ROWS - 1:
+            scale *= 1.15
+        person_height = max(3, round(13 * scale))
+        person_width = max(2, round(7 * scale))
+        spacing = max(person_width + 1, round(person_width * 1.15))
+        if row == STADIUM_ROWS - 1:
+            head_radius = max(1, round(scale * 2))
+            max_jump = round(scale * 2)
+            center_y = height - person_height // 2 - head_radius - max_jump - 2
+        else:
+            row_progress = row / max(1, STADIUM_ROWS - 1)
+            bottom_row_y = height - round(height * 0.06)
+            center_y = round(top_margin + (bottom_row_y - top_margin) * row_progress**1.4)
+        x = side_margin + rng.randrange(max(1, spacing))
+
+        while x + person_width < width - side_margin:
+            phase = rng.randrange(360)
+            model = rng.randrange(4)
+            color = pal.shade(SPECTATOR_COLORS[rng.randrange(len(SPECTATOR_COLORS))], 0.42)
+            energy = (math.sin((tick + phase) * 0.11) + 1) * 0.5
+            jump = round(energy * scale * 2) if model == 2 else 0
+            head_radius = max(1, round(scale * 2))
+            head_x = x + person_width // 2
+            head_y = center_y - person_height // 2 - jump
+            shoulder_y = head_y + head_radius
+            feet_y = center_y + person_height // 2 - jump
+            waving_flag = rng.randrange(18) == 0
+            flag_side = -1 if rng.randrange(2) else 1
+            bounds = pygame.Rect(
+                x - head_radius,
+                head_y - head_radius,
+                person_width + head_radius * 2,
+                person_height + head_radius * 2,
+            )
+            if (
+                bounds.left < side_margin
+                or bounds.right > width - side_margin
+                or bounds.top < 1
+                or bounds.bottom > height - 1
+            ) and row != STADIUM_ROWS - 1:
+                x += spacing
+                continue
+
+            pygame.draw.circle(surface, pal.shade(pal.PEACH, 0.62), (head_x, head_y), head_radius)
+            hair_color = SPECTATOR_HAIR_COLORS[rng.randrange(len(SPECTATOR_HAIR_COLORS))]
+            hairstyle = rng.randrange(5)
+            hair_top = head_y - head_radius
+            if hairstyle == 0:
+                pygame.draw.ellipse(
+                    surface,
+                    hair_color,
+                    (head_x - head_radius, hair_top, head_radius * 2 + 1, max(1, head_radius)),
+                )
+            elif hairstyle == 1:
+                pygame.draw.polygon(
+                    surface,
+                    hair_color,
+                    (
+                        (head_x - head_radius, head_y),
+                        (head_x - head_radius, hair_top + 1),
+                        (head_x, hair_top - max(1, round(scale))),
+                        (head_x + head_radius, hair_top + 1),
+                        (head_x + head_radius, head_y),
+                    ),
+                )
+            elif hairstyle == 2:
+                pygame.draw.rect(
+                    surface,
+                    hair_color,
+                    (head_x - head_radius - 1, head_y, 1, head_radius + 1),
+                )
+                pygame.draw.rect(
+                    surface,
+                    hair_color,
+                    (head_x + head_radius, head_y, 1, head_radius + 1),
+                )
+            elif hairstyle == 3:
+                pygame.draw.rect(
+                    surface,
+                    hair_color,
+                    (head_x - head_radius, hair_top, head_radius * 2 + 1, 1),
+                )
+                pygame.draw.line(
+                    surface,
+                    pal.shade(hair_color, 1.4),
+                    (head_x, hair_top),
+                    (head_x + head_radius, hair_top + 1),
+                )
+            pygame.draw.rect(
+                surface,
+                color,
+                (x, shoulder_y, person_width, max(1, feet_y - shoulder_y)),
+            )
+
+            arm_swing = round(energy * scale * 4)
+            if waving_flag:
+                pole_x = x - head_radius if flag_side < 0 else x + person_width + head_radius
+                pole_top = head_y - max(2, round(scale * 7))
+                pole_bottom = shoulder_y + max(1, round(scale * 2))
+                flag_color_index = rng.randrange(len(pal.PADDLE_PALETTE))
+                flag_color = pal.PADDLE_PALETTE[flag_color_index]
+                second_flag_color = pal.PADDLE_PALETTE[
+                    (flag_color_index + 1 + rng.randrange(len(pal.PADDLE_PALETTE) - 1))
+                    % len(pal.PADDLE_PALETTE)
+                ]
+                flutter = round(math.sin((tick + phase) * 0.16) * max(1, round(scale)))
+                flag_width = max(3, round(scale * 5))
+                flag_height = max(2, round(scale * 3))
+                flag = pygame.Rect(
+                    min(pole_x, pole_x + flag_side * flag_width),
+                    pole_top - 1,
+                    flag_width + 1,
+                    flag_height + abs(flutter) + 2,
+                )
+                if (
+                    flag.left >= side_margin
+                    and flag.right <= width - side_margin
+                    and not _stadium_near_arena(flag, width, height)
+                ):
+                    pygame.draw.line(
+                        surface, pal.LIGHT_GREY, (pole_x, pole_bottom), (pole_x, pole_top), 1
+                    )
+                    pygame.draw.polygon(
+                        surface,
+                        flag_color,
+                        (
+                            (pole_x, pole_top),
+                            (pole_x + flag_side * flag_width, pole_top + 1 + flutter),
+                            (
+                                pole_x + flag_side * (flag_width - 1),
+                                pole_top + flag_height + flutter,
+                            ),
+                            (pole_x, pole_top + flag_height),
+                        ),
+                    )
+                    stripe_y = pole_top + max(1, flag_height // 2)
+                    stripe_outer_x = pole_x + flag_side * flag_width
+                    stripe_outer_y = pole_top + 1 + flutter + max(1, flag_height // 2)
+                    pygame.draw.polygon(
+                        surface,
+                        second_flag_color,
+                        (
+                            (pole_x, stripe_y),
+                            (stripe_outer_x, stripe_outer_y),
+                            (
+                                pole_x + flag_side * (flag_width - 1),
+                                pole_top + flag_height + flutter,
+                            ),
+                            (pole_x, pole_top + flag_height),
+                        ),
+                    )
+                    raised_hand_y = pole_top + round(scale * 4)
+                    pygame.draw.line(
+                        surface,
+                        color,
+                        (x if flag_side < 0 else x + person_width, shoulder_y + 1),
+                        (pole_x, raised_hand_y),
+                        1,
+                    )
+            elif model == 0:
+                pygame.draw.line(
+                    surface, color, (x, shoulder_y + 1), (x - head_radius, head_y - arm_swing), 1
+                )
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (x + person_width, shoulder_y + 1),
+                    (x + person_width + head_radius, head_y - arm_swing),
+                    1,
+                )
+            elif model == 1:
+                clap = round(energy * head_radius)
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (x, shoulder_y + 1),
+                    (head_x - clap, head_y + head_radius),
+                    1,
+                )
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (x + person_width, shoulder_y + 1),
+                    (head_x + clap, head_y + head_radius),
+                    1,
+                )
+            elif model == 2:
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (x, shoulder_y + 1),
+                    (x - head_radius, head_y - head_radius),
+                    1,
+                )
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (x + person_width, shoulder_y + 1),
+                    (x + person_width + head_radius, head_y - head_radius),
+                    1,
+                )
+            else:
+                wave = round(math.sin((tick + phase) * 0.14) * head_radius)
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (x + person_width, shoulder_y + 1),
+                    (x + person_width + head_radius, head_y - head_radius + wave),
+                    1,
+                )
+                pygame.draw.line(surface, color, (x, shoulder_y + 1), (x - head_radius, feet_y), 1)
+            x += spacing
+
+
+def _stadium_near_arena(bounds: pygame.Rect, width: int, height: int) -> bool:
+    margin_x = max(2, round(width * 0.025))
+    margin_y = max(2, round(height * 0.025))
+    field_top = round(height * 0.28)
+    field_bottom = round(height * 0.83)
+    arena_top = field_top - margin_y
+    arena_bottom = field_bottom + margin_y
+    if bounds.bottom < arena_top or bounds.top > arena_bottom:
+        return False
+
+    for y in (max(bounds.top, arena_top), min(bounds.bottom, arena_bottom)):
+        progress = max(0.0, min(1.0, (y - field_top) / max(1, field_bottom - field_top)))
+        arena_left = width * (0.19 - 0.14 * progress) - margin_x
+        arena_right = width * (0.81 + 0.14 * progress) + margin_x
+        if bounds.right >= arena_left and bounds.left <= arena_right:
+            return True
+    return False
 
 
 def _fill_ambient_gradient(surface: pygame.Surface) -> None:
@@ -226,6 +480,7 @@ PAINTERS: dict[str, Painter] = {
     "rainbow": _generated("rainbow"),
     "gears": _generated("gears"),
     "pulse": _generated("pulse"),
+    "stadium": _stadium,
 }
 
 

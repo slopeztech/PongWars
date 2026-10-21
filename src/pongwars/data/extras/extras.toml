@@ -119,6 +119,11 @@ category = "weapon"
 ammo = 1
 weight = 2
 
+[build]
+category = "weapon"
+ammo = 2
+weight = 2
+
 [missile]
 category = "weapon"
 ammo = 2
@@ -147,4 +152,18 @@ weight = 2
 [invasor]
 category = "penalty"
 duration = 8.0
+weight = 2
+
+[stalker]
+category = "penalty"
+duration = 7.0
+weight = 2
+
+[chomper]
+category = "power"
+weight = 2
+
+[leviathan]
+category = "penalty"
+duration = 5.0
 weight = 2

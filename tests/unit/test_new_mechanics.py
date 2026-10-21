@@ -8,15 +8,19 @@ from pongwars.audio.player import AudioPlayer, load_bank
 from pongwars.audio.synth import render_tone
 from pongwars.domain import constants as c
 from pongwars.domain.config import MatchConfig
-from pongwars.domain.entities import Missile, Obstacle, Rect
+from pongwars.domain.entities import Chomper, Missile, Obstacle, Rect
 from pongwars.domain.events import (
+    BallReleased,
+    BallSwallowed,
     BombDetonated,
     EffectApplied,
     Event,
+    LeviathanRoared,
     MissileHit,
     ObstacleDestroyed,
     PaddleHit,
     SpinHit,
+    StalkerExploded,
     WallHit,
 )
 from pongwars.domain.extras import Pickup
@@ -347,6 +351,20 @@ def test_snapshot_preserves_spin_companion_missile_and_targeted_pickup() -> None
         Missile(Vec2(20.0, 30.0), Vec2(4.0, 5.0), 0, 30, 1.5, target=1, kind="bomb")
     )
     source.extras.apply_direct("invasor", 1, [])
+    source.extras.apply_direct("stalker", 1, [])
+    source.extras.apply_direct("leviathan", 0, [])
+    source.ball.swallowed = True
+    source.extras.chompers.append(
+        Chomper(
+            Vec2(90.0, 40.0),
+            source.ball,
+            0,
+            120,
+            "roaming",
+            90,
+            Vec2(120.0, 60.0),
+        )
+    )
     source.extras.pickups.append(Pickup(Vec2(40.0, 45.0), "shield", 50, 0, True))
     mirror = make_world()
 
@@ -359,6 +377,13 @@ def test_snapshot_preserves_spin_companion_missile_and_targeted_pickup() -> None
     assert len(mirror.extras.missiles) == 1
     assert mirror.extras.missiles[0].target == 1
     assert mirror.extras.missiles[0].kind == "bomb"
+    assert len(mirror.extras.stalkers) == 1
+    assert len(mirror.extras.chompers) == 1
+    assert mirror.extras.chompers[0].ball is mirror.ball
+    assert mirror.extras.chompers[0].phase == "roaming"
+    assert mirror.extras.chompers[0].phase_ticks == 90
+    assert mirror.extras.chompers[0].target == Vec2(120.0, 60.0)
+    assert mirror.ball.swallowed
     assert mirror.extras.pickups[0].target == 0
     assert mirror.extras.pickups[0].reduced
 
@@ -386,6 +411,28 @@ def test_spin_sound_is_different_from_normal_paddle_hit(monkeypatch: pytest.Monk
     player.handle_events([PaddleHit(0), SpinHit(0)])
 
     assert played == ["paddle", "spin_hit"]
+
+
+def test_new_extra_sounds_are_registered_and_played(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    player = object.__new__(AudioPlayer)
+    player.bank = load_bank()
+    player.enabled = True
+    played: list[str] = []
+    monkeypatch.setattr(player, "play", lambda name: played.append(name) is None)
+
+    player.handle_events(
+        [
+            EffectApplied(0, "leviathan"),
+            BallSwallowed(80.0, 45.0),
+            BallReleased(100.0, 45.0),
+            StalkerExploded(1, 150.0, 45.0),
+            LeviathanRoared(),
+        ]
+    )
+
+    assert played == ["chomp", "release", "stalker_boom", "abyssal_roar"]
 
 
 def test_match_countdown_shows_three_numbers_for_half_a_second_each() -> None:

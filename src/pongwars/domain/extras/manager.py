@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING
 
 from pongwars.domain import constants as c
 from pongwars.domain.config import ConfigError
-from pongwars.domain.entities import Ball, Cat, Companion, Invader, Missile
+from pongwars.domain.entities import Ball, Cat, Chomper, Companion, Invader, Missile, Stalker
 from pongwars.domain.events import (
+    BallReleased,
+    BallSwallowed,
     CatPounced,
     EffectApplied,
     EffectExpired,
@@ -18,6 +20,7 @@ from pongwars.domain.events import (
     PickupCollected,
     PickupSpawned,
     ShieldUsed,
+    StalkerExploded,
     WeaponEmpty,
 )
 from pongwars.domain.extras.base import CATEGORIES, EFFECTS, Effect, EffectSpec, Mods, load_specs
@@ -52,11 +55,14 @@ class ExtrasManager:
         """
         self._world = world
         self.specs = load_specs()
+        self.auto_spawn_enabled = True
         self.pickups: list[Pickup] = []
         self.cats: list[Cat] = []
         self.companions: list[Companion] = []
         self.invaders: list[Invader] = []
         self.missiles: list[Missile] = []
+        self.stalkers: list[Stalker] = []
+        self.chompers: list[Chomper] = []
         self.active: list[list[Effect]] = [[] for _ in range(world.players)]
         self.weapons: list[tuple[str, int] | None] = [None] * world.players
         self.spawn_names = self._spawnable(world.config.extras)
@@ -151,7 +157,7 @@ class ExtrasManager:
         @param events Event list to append to.
         """
         world = self._world
-        free = [ball for ball in world.balls if ball.held_by is None]
+        free = [ball for ball in world.balls if ball.held_by is None and not ball.swallowed]
         for cat in list(self.cats):
             cat.ttl -= 1
             cat.cooldown = max(0, cat.cooldown - 1)
@@ -180,6 +186,274 @@ class ExtrasManager:
         ball.toucher = cat.owner
         cat.cooldown = c.CAT_COOLDOWN_TICKS
         events.append(CatPounced(ball.pos.x, ball.pos.y))
+
+    def spawn_chomper(self, owner: int) -> None:
+        """@brief Spawn a hungry orb that roams before chasing the nearest free ball.
+        @param owner Player credited with collecting the power.
+        """
+        world = self._world
+        free = [ball for ball in world.balls if ball.held_by is None and not ball.swallowed]
+        if not free:
+            return
+        center = Vec2(c.FIELD_WIDTH / 2, c.FIELD_HEIGHT / 2)
+        ball = min(free, key=lambda item: (item.pos - center).length())
+        pos = None
+        for _ in range(c.PICKUP_PLACEMENT_TRIES * 2):
+            angle = world.rng.uniform(0.0, math.tau)
+            distance = world.rng.uniform(12.0, 22.0)
+            candidate = Vec2(
+                min(max(ball.pos.x + math.cos(angle) * distance, 10.0), c.FIELD_WIDTH - 10.0),
+                min(max(ball.pos.y + math.sin(angle) * distance, 10.0), c.FIELD_HEIGHT - 10.0),
+            )
+            if self._effect_position_clear(candidate, ball):
+                pos = candidate
+                break
+        if pos is None:
+            pos = self._random_clear_position(ball)
+        if pos is not None:
+            chomper = Chomper(
+                pos,
+                ball,
+                owner,
+                c.CHOMPER_LIFETIME_TICKS,
+                "roaming",
+                world.rng.randint(c.CHOMPER_ROAM_MIN_TICKS, c.CHOMPER_ROAM_MAX_TICKS),
+            )
+            chomper.target = self._random_chomper_target(chomper)
+            self.chompers.append(chomper)
+
+    def update_stalkers(self, events: list[Event]) -> None:
+        """@brief Chase target paddles, stunning them when a creature reaches contact.
+        @param events Event list to append to.
+        """
+        world = self._world
+        for stalker in list(self.stalkers):
+            stalker.ttl -= 1
+            if stalker.ttl <= 0 or not world.alive[stalker.target]:
+                self.stalkers.remove(stalker)
+                continue
+            paddle = world.paddles[stalker.target].rect
+            closest = Vec2(
+                min(max(stalker.pos.x, paddle.cx - paddle.half_w), paddle.cx + paddle.half_w),
+                min(max(stalker.pos.y, paddle.cy - paddle.half_h), paddle.cy + paddle.half_h),
+            )
+            delta = closest - stalker.pos
+            distance = delta.length()
+            if distance > 0.0:
+                step = min(c.STALKER_SPEED * c.DT, distance)
+                stalker.pos = stalker.pos + delta * (step / distance)
+            closest = Vec2(
+                min(max(stalker.pos.x, paddle.cx - paddle.half_w), paddle.cx + paddle.half_w),
+                min(max(stalker.pos.y, paddle.cy - paddle.half_h), paddle.cy + paddle.half_h),
+            )
+            if (closest - stalker.pos).length() <= c.STALKER_RADIUS:
+                self.apply_direct("stun", stalker.target, events)
+                events.append(StalkerExploded(stalker.target, stalker.pos.x, stalker.pos.y))
+                self.stalkers.remove(stalker)
+
+    def update_chompers(self, events: list[Event]) -> None:
+        """@brief Chase free balls, briefly swallow one, then release it elsewhere.
+        @param events Event list to append to.
+        """
+        for chomper in list(self.chompers):
+            if not any(chomper.ball is ball for ball in self._world.balls):
+                chomper.ball.swallowed = False
+                self.chompers.remove(chomper)
+                continue
+            chomper.ttl -= 1
+            if chomper.ttl <= 0:
+                if chomper.phase == "swallowing":
+                    self._release_chomper(chomper, events)
+                else:
+                    self.chompers.remove(chomper)
+                continue
+            if chomper.phase == "roaming":
+                self._roam_chomper(chomper)
+                continue
+            if chomper.phase == "seeking":
+                ball = chomper.ball
+                if ball.held_by is not None or ball.swallowed:
+                    self.chompers.remove(chomper)
+                    continue
+                distance = (ball.pos - chomper.pos).length()
+                lead = min(distance / c.CHOMPER_SPEED, 0.25)
+                aim = ball.pos + ball.vel * lead
+                delta = aim - chomper.pos
+                if distance > 0.0:
+                    step = min(c.CHOMPER_SPEED * c.DT, distance)
+                    chomper.pos = chomper.pos + delta * (step / distance)
+                if distance <= (
+                    c.CHOMPER_RADIUS + ball.radius + (c.CHOMPER_SPEED + ball.vel.length()) * c.DT
+                ):
+                    chomper.pos = ball.pos
+                    ball.swallowed = True
+                    ball.vel = ball.vel * c.CHOMPER_BALL_SPEED_FACTOR
+                    chomper.phase = "swallowing"
+                    chomper.phase_ticks = c.CHOMPER_SWALLOW_TICKS
+                    events.append(BallSwallowed(ball.pos.x, ball.pos.y))
+            elif chomper.phase == "swallowing":
+                chomper.phase_ticks -= 1
+                if chomper.phase_ticks <= 0:
+                    self._release_chomper(chomper, events)
+            else:
+                chomper.phase_ticks -= 1
+                if chomper.phase_ticks <= 0:
+                    self.chompers.remove(chomper)
+
+    def _roam_chomper(self, chomper: Chomper) -> None:
+        if chomper.phase_ticks <= 0:
+            chomper.phase = "seeking"
+            chomper.target = None
+            return
+        if chomper.target is None:
+            chomper.target = self._random_chomper_target(chomper)
+        if chomper.target is not None:
+            delta = chomper.target - chomper.pos
+            distance = delta.length()
+            step = min(c.CHOMPER_SPEED * c.DT, distance)
+            if distance > 0.0:
+                chomper.pos = chomper.pos + delta * (step / distance)
+            if distance <= step:
+                chomper.target = self._random_chomper_target(chomper)
+        chomper.phase_ticks -= 1
+        if chomper.phase_ticks <= 0:
+            chomper.phase = "seeking"
+            chomper.target = None
+
+    def _random_chomper_target(self, chomper: Chomper) -> Vec2 | None:
+        world = self._world
+        for _ in range(c.PICKUP_PLACEMENT_TRIES * 2):
+            candidate = Vec2(
+                world.rng.uniform(10.0, c.FIELD_WIDTH - 10.0),
+                world.rng.uniform(10.0, c.FIELD_HEIGHT - 10.0),
+            )
+            if (
+                candidate - chomper.pos
+            ).length() > c.CHOMPER_RADIUS * 4 and self._effect_position_clear(
+                candidate, chomper.ball
+            ):
+                return candidate
+        return self._random_clear_position(chomper.ball)
+
+    def _release_chomper(self, chomper: Chomper, events: list[Event]) -> None:
+        if chomper not in self.chompers:
+            return
+        position = self._random_clear_position(chomper.ball)
+        if position is None:
+            position = chomper.ball.pos
+        chomper.ball.pos = position
+        chomper.ball.vel = self._chomper_release_velocity(position, chomper.ball.vel)
+        chomper.ball.swallowed = False
+        chomper.pos = position
+        chomper.phase = "releasing"
+        chomper.phase_ticks = c.CHOMPER_RELEASE_TICKS
+        chomper.ttl = max(chomper.ttl, c.CHOMPER_RELEASE_TICKS)
+        events.append(BallReleased(position.x, position.y))
+
+    def _chomper_release_velocity(self, position: Vec2, velocity: Vec2) -> Vec2:
+        world = self._world
+        targets: list[Vec2] = []
+        for seat in range(4):
+            if not world._is_wall(seat):
+                continue
+            if seat == 0:
+                wall_x = c.BALL_RADIUS
+                for offset in (-c.CHOMPER_RELEASE_WALL_OFFSET, c.CHOMPER_RELEASE_WALL_OFFSET):
+                    wall_y = min(
+                        max(position.y + offset, c.BALL_RADIUS),
+                        c.FIELD_HEIGHT - c.BALL_RADIUS,
+                    )
+                    targets.append(Vec2(wall_x, wall_y))
+            elif seat == 1:
+                wall_x = c.FIELD_WIDTH - c.BALL_RADIUS
+                for offset in (-c.CHOMPER_RELEASE_WALL_OFFSET, c.CHOMPER_RELEASE_WALL_OFFSET):
+                    wall_y = min(
+                        max(position.y + offset, c.BALL_RADIUS),
+                        c.FIELD_HEIGHT - c.BALL_RADIUS,
+                    )
+                    targets.append(Vec2(wall_x, wall_y))
+            elif seat == 2:
+                wall_y = c.BALL_RADIUS
+                for offset in (-c.CHOMPER_RELEASE_WALL_OFFSET, c.CHOMPER_RELEASE_WALL_OFFSET):
+                    wall_x = min(
+                        max(position.x + offset, c.BALL_RADIUS),
+                        c.FIELD_WIDTH - c.BALL_RADIUS,
+                    )
+                    targets.append(Vec2(wall_x, wall_y))
+            else:
+                wall_y = c.FIELD_HEIGHT - c.BALL_RADIUS
+                for offset in (-c.CHOMPER_RELEASE_WALL_OFFSET, c.CHOMPER_RELEASE_WALL_OFFSET):
+                    wall_x = min(
+                        max(position.x + offset, c.BALL_RADIUS),
+                        c.FIELD_WIDTH - c.BALL_RADIUS,
+                    )
+                    targets.append(Vec2(wall_x, wall_y))
+        for obstacle in world.obstacles:
+            if not obstacle.active:
+                continue
+            rect = obstacle.rect
+            for x_sign in (-1.0, 1.0):
+                for y_sign in (-1.0, 1.0):
+                    targets.append(
+                        Vec2(
+                            rect.cx + x_sign * rect.half_w * 0.75,
+                            rect.cy + y_sign * rect.half_h * 0.75,
+                        )
+                    )
+        if not targets:
+            targets.extend(
+                Vec2(paddle.rect.cx, paddle.rect.cy)
+                for seat, paddle in enumerate(world.paddles)
+                if world.alive[seat]
+            )
+
+        angled_targets = [
+            target
+            for target in targets
+            if abs(target.x - position.x) >= 2.0 and abs(target.y - position.y) >= 2.0
+        ]
+        target = min(
+            angled_targets or targets,
+            key=lambda point: (point - position).length(),
+        )
+        direction = target - position
+        distance = direction.length()
+        speed = velocity.length() or c.BALL_MIN_SPEED
+        return direction * (speed / distance)
+
+    def _random_clear_position(self, ignored_ball: Ball | None = None) -> Vec2 | None:
+        world = self._world
+        for _ in range(c.PICKUP_PLACEMENT_TRIES * 2):
+            pos = Vec2(
+                world.rng.uniform(10.0, c.FIELD_WIDTH - 10.0),
+                world.rng.uniform(10.0, c.FIELD_HEIGHT - 10.0),
+            )
+            if self._effect_position_clear(pos, ignored_ball):
+                return pos
+        for y in range(10, int(c.FIELD_HEIGHT) - 9, 8):
+            for x in range(10, int(c.FIELD_WIDTH) - 9, 8):
+                pos = Vec2(float(x), float(y))
+                if self._effect_position_clear(pos, ignored_ball):
+                    return pos
+        return None
+
+    def _effect_position_clear(self, pos: Vec2, ignored_ball: Ball | None) -> bool:
+        world = self._world
+        if self._blocked(pos):
+            return False
+        if any(
+            abs(pos.x - paddle.rect.cx) <= paddle.rect.half_w + c.CHOMPER_RADIUS
+            and abs(pos.y - paddle.rect.cy) <= paddle.rect.half_h + c.CHOMPER_RADIUS
+            for seat, paddle in enumerate(world.paddles)
+            if world.alive[seat]
+        ):
+            return False
+        return not any(
+            ball is not ignored_ball
+            and not ball.swallowed
+            and (pos - ball.pos).length() < c.CHOMPER_RADIUS + ball.radius
+            for ball in world.balls
+        )
 
     def update_companions(self) -> None:
         """@brief Move companion paddles towards the ball's current path and age them."""
@@ -284,7 +558,10 @@ class ExtrasManager:
                     best_t, obstacle_hit, player_hit = hit.t, None, seat
             missile.pos = missile.pos + disp * best_t
             if obstacle_hit is not None:
-                world.destroy_obstacle(obstacle_hit, events)
+                if world.obstacles[obstacle_hit].kind == "built":
+                    world.damage_obstacle(obstacle_hit, events)
+                else:
+                    world.destroy_obstacle(obstacle_hit, events)
                 events.append(MissileHit(missile.owner, missile.pos.x, missile.pos.y, None))
                 self.missiles.remove(missile)
             elif player_hit is not None:
@@ -373,18 +650,17 @@ class ExtrasManager:
         """@brief Spawn, age and collect pickups.
         @param events Event list to append to.
         """
-        if not self.spawn_names:
-            return
-        self._spawn_timer -= 1
-        if self._spawn_timer <= 0:
-            self._spawn_timer = round(self._world.config.extras_interval * c.TICK_RATE)
-            if len(self.pickups) < c.PICKUP_MAX_ON_TABLE:
-                self._spawn(events)
-        self._comeback_timer -= 1
-        if self._comeback_timer <= 0:
-            self._comeback_timer = c.COMEBACK_PICKUP_INTERVAL_TICKS
-            if not self.pickups:
-                self._spawn_comeback(events)
+        if self.auto_spawn_enabled and self.spawn_names:
+            self._spawn_timer -= 1
+            if self._spawn_timer <= 0:
+                self._spawn_timer = round(self._world.config.extras_interval * c.TICK_RATE)
+                if len(self.pickups) < c.PICKUP_MAX_ON_TABLE:
+                    self._spawn(events)
+            self._comeback_timer -= 1
+            if self._comeback_timer <= 0:
+                self._comeback_timer = c.COMEBACK_PICKUP_INTERVAL_TICKS
+                if not self.pickups:
+                    self._spawn_comeback(events)
         for pickup in list(self.pickups):
             pickup.ttl -= 1
             owner = (
@@ -419,6 +695,8 @@ class ExtrasManager:
 
     def _collector(self, pickup: Pickup) -> int | None:
         for ball in self._world.balls:
+            if ball.swallowed:
+                continue
             toucher = ball.toucher
             if toucher is None or not self._world.alive[toucher]:
                 continue

@@ -42,6 +42,7 @@ BACKGROUNDS = (
     "rainbow",
     "gears",
     "pulse",
+    "stadium",
 )
 BALL_STYLES = (
     "classic",

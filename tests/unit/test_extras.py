@@ -256,13 +256,23 @@ def test_active_cap_drops_oldest() -> None:
     assert EffectExpired(0, "big_paddle") in events
 
 
-def test_multiball_adds_balls_up_to_cap() -> None:
+@pytest.mark.parametrize("target_count", (2, 3, 4))
+def test_multiball_randomly_sets_ball_count_between_two_and_four(
+    monkeypatch: pytest.MonkeyPatch, target_count: int
+) -> None:
     world = make_world()
     world.ball.vel = Vec2(40.0, 10.0)
+    calls: list[tuple[int, int]] = []
+
+    def random_count(low: int, high: int) -> int:
+        calls.append((low, high))
+        return target_count
+
+    monkeypatch.setattr(world.rng, "randint", random_count)
+
     world.extras.apply("multiball", 0, [])
-    assert len(world.balls) == 3
-    world.extras.apply("multiball", 0, [])
-    assert len(world.balls) == c.MAX_BALLS
+    assert len(world.balls) == target_count
+    assert calls == [(2, c.MAX_BALLS)]
 
 
 def test_extra_ball_goal_keeps_match_playing() -> None:
@@ -354,17 +364,28 @@ def test_magnet_holds_ball_until_fire() -> None:
     assert world.ball.vel.x < 0
 
 
+def test_player_zero_can_release_magnet_with_fire_input() -> None:
+    world = make_world()
+    world.ball.held_by = 0
+    world.ball.stored_vel = Vec2(60.0, 0.0)
+    world.ball.hold_ticks = c.MAGNET_HOLD_TICKS
+
+    world.step(FrameInputs((0.0, 0.0), (True, False)))
+
+    assert world.ball.held_by is None
+
+
 def test_magnet_releases_on_timeout() -> None:
     world = make_world()
-    world.extras.apply("magnet", 1, [])
-    paddle = world.paddles[1].rect
-    world.ball.pos = Vec2(paddle.cx - 3.0, paddle.cy)
-    world.ball.vel = Vec2(60.0, 0.0)
-    for _ in range(10):
+    world.ball.held_by = 1
+    world.ball.stored_vel = Vec2(-60.0, 0.0)
+    world.ball.hold_ticks = c.MAGNET_HOLD_TICKS
+    for _ in range(c.MAGNET_HOLD_TICKS - 1):
         world.step(IDLE)
-    for _ in range(c.MAGNET_HOLD_TICKS + 2):
-        world.step(IDLE)
+    assert world.ball.held_by == 1
+    world.step(IDLE)
     assert world.ball.held_by is None
+    assert c.MAGNET_HOLD_TICKS == 3 * c.TICK_RATE
 
 
 def test_config_round_trip_with_extras() -> None:

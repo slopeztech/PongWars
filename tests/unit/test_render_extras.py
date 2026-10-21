@@ -11,7 +11,17 @@ import pytest
 
 from pongwars.core.i18n import Translator
 from pongwars.domain.config import MatchConfig
-from pongwars.domain.events import BallWarped, BombDetonated, Event, LaserFired, MissileHit
+from pongwars.domain.events import (
+    BallReleased,
+    BallSwallowed,
+    BallWarped,
+    BombDetonated,
+    Event,
+    LaserFired,
+    LeviathanRoared,
+    MissileHit,
+    StalkerExploded,
+)
 from pongwars.domain.extras import Pickup, load_specs
 from pongwars.domain.vec import Vec2
 from pongwars.domain.world import FrameInputs, World
@@ -33,7 +43,16 @@ def test_draws_every_extra_without_error() -> None:
     for view in ("shared", "split"):
         world = _world()
         renderer = Renderer(RenderSettings(view=view))
-        for name in ("shield", "blind", "laser", "multiball", "big_paddle"):
+        for name in (
+            "shield",
+            "blind",
+            "laser",
+            "multiball",
+            "big_paddle",
+            "stalker",
+            "chomper",
+            "leviathan",
+        ):
             world.extras.apply(name, 0, [])
         world.extras.pickups.append(Pickup(Vec2(80.0, 45.0), "bomb", 50))
         events: list[Event] = []
@@ -91,6 +110,75 @@ def test_invasor_renders_without_error() -> None:
     world.extras.apply_direct("invasor", 1, [])
     renderer = Renderer()
     renderer.draw(world)
+
+
+def test_hungry_orb_is_drawn_during_its_roaming_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pygame.init()
+    world = _world()
+    world.extras.apply("chomper", 0, [])
+    assert world.extras.chompers[0].phase == "roaming"
+    renderer = Renderer()
+    drawn: list[int] = []
+    monkeypatch.setattr(renderer, "_chomper", lambda _world, index: drawn.append(index))
+
+    renderer.draw(world)
+
+    assert drawn == [0]
+
+
+def test_stalker_renders_as_a_pixelated_green_creature() -> None:
+    pygame.init()
+    world = _world()
+    world.extras.apply_direct("stalker", 1, [])
+    renderer = Renderer()
+    renderer.draw(world)
+
+    colors = {
+        renderer.surface.get_at((x, y))[:3]
+        for x in range(renderer.surface.get_width())
+        for y in range(renderer.surface.get_height())
+    }
+    assert (0, 154, 47) in colors
+    assert pal.BLACK in colors
+
+
+def test_new_extra_events_start_their_visual_effects() -> None:
+    world = _world()
+    renderer = Renderer()
+    renderer.handle_events(
+        world,
+        [
+            StalkerExploded(0, 20.0, 45.0),
+            BallSwallowed(80.0, 45.0),
+            BallReleased(100.0, 45.0),
+            LeviathanRoared(),
+        ],
+    )
+
+    assert len(renderer.explosions) == 1
+    assert len(renderer.particles.particles) > 0
+    assert renderer.shake.amplitude > 0.0
+
+
+def test_leviathan_flips_camera_below_the_arena_and_renders() -> None:
+    pygame.init()
+    world = _world()
+    renderer = Renderer()
+    world.extras.apply_direct("leviathan", 0, [])
+    for _ in range(round(0.6 * 60)):
+        world.extras.tick_effects([])
+
+    camera = renderer._camera_for(renderer.viewports(world)[0], world)
+
+    assert camera._pitch < 0
+    canvas = pygame.Surface((320, 180), pygame.SRCALPHA)
+    renderer._canvas = canvas
+    renderer.camera = camera
+    renderer._draw_leviathan(world)
+    assert pygame.mask.from_surface(canvas).count() > 100
+    assert renderer.draw(world).get_size() == (320, 180)
 
 
 def test_every_extra_has_a_unique_category_colored_pickup_icon() -> None:

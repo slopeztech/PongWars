@@ -20,14 +20,15 @@ Powers help the player who collects them, unless noted otherwise.
 |-------|----------|--------------|
 | **Big paddle** | 10 seconds | Makes your paddle 1.5 times its normal length. |
 | **Speed boost** | 8 seconds | Makes your paddle move 1.5 times faster. |
-| **Magnet** | 12 seconds | Lets your paddle catch the ball on contact. Fire your weapon to release it, or wait for the hold to time out. |
+| **Magnet** | 12 seconds | Lets your paddle catch the ball on contact. Press your fire key (D by default) to release it, or it releases automatically after three seconds. |
 | **Shield** | 20 seconds | Absorbs the next goal that would be scored against you and bounces the ball back into play. |
-| **Multiball** | Instant | Adds up to two balls with diverging trajectories, subject to the four-ball limit. |
+| **Multiball** | Instant | Randomly sets the match to between two and four balls with diverging trajectories, subject to the four-ball limit. |
 | **Slow motion** | 6 seconds | Slows opponents' paddles to 60% of their normal movement speed. |
 | **Aim assist** | 10 seconds | Aims your paddle returns toward the next opponent while the power lasts. |
 | **Cleanse** | Instant | Removes your active penalties and status effects. It does not remove powers or weapons. |
 | **Slow ball** | Instant | Slows every free ball to 70% speed, subject to the game's minimum-speed limit. |
 | **Companion** | 8 seconds | Adds a small temporary AI paddle near your goal to help defend it. |
+| **Hungry orb** | Instant | Appears immediately and roams the table for two to three seconds, then pursues a ball. When it catches one, it slows it by 10%, swallows it briefly, and releases it at a random clear position on an angled path toward the nearest wall or obstacle, never toward a goal. |
 
 ## Weapons
 
@@ -44,6 +45,7 @@ weapon again adds its ammunition to your current supply.
 | **Hex** | 1 | Gives the next living opponent a random lasting penalty. |
 | **Warp** | 2 | Moves every free ball to a random position away from the outer goal lines without changing its velocity. |
 | **Headbutt** | 1 | Lunges your paddle forward for 0.3 seconds, extending its reach. A hit during the lunge sends the ball back with a powerful special boost. |
+| **Build** | 2 | Builds up to two defensive blocks in front of your paddle. Each block breaks on the first ball or weapon contact. |
 | **Missile** | 2 | Fires one guided missile toward the nearest living opponent per shot. A hit stuns that paddle; a destructible obstacle can be destroyed. |
 
 If you have no ammunition, or a weapon-jam penalty is active, firing has no
@@ -65,8 +67,13 @@ penalty affects its collector.
 | **Turbo ball** | Instant | Speeds every free ball up by 25%, subject to the maximum-speed limit. |
 | **Dizzy controls** | 7 seconds | Adds a wobble to your paddle movement, even while you are not pressing a direction. |
 | **Weapon jam** | 8 seconds | Prevents you from firing your weapon while the penalty lasts. |
+| **Stalker** | 7 seconds | Sends a slow pixel creature from the other half of the court after your paddle. It explodes on contact and stuns you. |
+| **Abyssal leviathan** | 5 seconds | A giant tentacled creature rises behind the arena, lifts the table, and briefly turns the camera underneath it. |
 
 The **Cleanse** power can remove active penalties and status effects.
+
+These three extras use original characters, pixel art, and synthesized sound
+effects.
 
 ## Comeback pickups
 

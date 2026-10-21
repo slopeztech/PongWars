@@ -140,11 +140,12 @@ class AudioPlayer:
         """
         started = 0
         for event in events:
-            name = (
-                "ramp"
-                if isinstance(event, EffectApplied) and event.name == "ramp"
-                else self.bank.events.get(type(event).__name__)
-            )
+            if isinstance(event, EffectApplied) and event.name == "ramp":
+                name = "ramp"
+            elif isinstance(event, EffectApplied) and event.name == "leviathan":
+                name = None
+            else:
+                name = self.bank.events.get(type(event).__name__)
             if name is not None and self.play(name):
                 started += 1
         return started
