@@ -4,7 +4,7 @@
 
 import re
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 _VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
